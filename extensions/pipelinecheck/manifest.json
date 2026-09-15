@@ -1,0 +1,63 @@
+{
+  "manifestVersion": "1.0",
+  "id": "duplo.examples.pipelinecheck",
+  "name": "Pipeline Check",
+  "version": "0.1.0",
+
+  "sdkVersion": "REPLACED_BY_SKILL_FROM_sdk-version_ENDPOINT",
+  "backend": {
+    "assemblyDir": "duplo.examples.pipelinecheck/0.1.0/backend",
+    "entryAssembly": "Duplo.Extension.PipelineCheck.dll"
+  },
+
+  "resources": [
+    {
+      "ticketOriginType": "PipelineCheck",
+      "restSegment": "extensions/pipelinechecks",
+      "subType": "pipeline-check",
+      "archetype": "typed",
+      "registrar": "DevOpsResource",
+      "entityType": "Duplo.Extension.PipelineCheck.PipelineCheck",
+      "specType": "Duplo.Extension.PipelineCheck.PipelineCheckSpec",
+      "resultType": "Duplo.Extension.PipelineCheck.PipelineCheckResult",
+      "hooksType": "Duplo.Extension.PipelineCheck.PipelineCheckHooks",
+      "serviceType": "Duplo.Extension.PipelineCheck.PipelineCheckService"
+    }
+  ],
+
+  "skills": [
+    { "folder": "duplo.examples.pipelinecheck/0.1.0/skills/provision-pipelinecheck", "isBuiltIn": true }
+  ],
+  "skillMappings": [
+    { "originType": "PipelineCheck", "subType": "pipeline-check", "skillNames": ["provision-pipelinecheck"], "timeout": { "provision": 300, "deprovision": 120 } }
+  ],
+
+  "frontend": {
+    "remote": {
+      "remoteName": "duploExtensionPipelinecheck",
+      "remoteEntry": "/v1/aiservicedesk/extensions/duplo.examples.pipelinecheck/fe/remoteEntry.json",
+      "exposedModule": "./Extension",
+      "type": "module"
+    },
+    "menus": [
+      {
+        "id": "duplo.examples.pipelinecheck-devops",
+        "title": "DevOps",
+        "type": "collapsible-section",
+        "children": [
+          {
+            "id": "duplo.examples.pipelinecheck-pipeline-check",
+            "title": "Pipeline Check",
+            "type": "item",
+            "matIcon": "hand-wave",
+            "relativeUrl": "extensions/pipelinechecks",
+            "order": 40
+          }
+        ]
+      }
+    ],
+    "routes": [
+      { "path": "extensions/pipelinechecks", "resourceType": "PipelineCheck", "subType": "pipeline-check" }
+    ]
+  }
+}

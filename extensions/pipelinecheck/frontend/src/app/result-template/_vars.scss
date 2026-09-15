@@ -1,0 +1,13 @@
+// VENDORED renderer needs a few theme SCSS vars that the host normally injects via includePaths.
+// These are the Vuexy palette defaults; the host's global theme governs the surrounding chrome, and
+// component styles are view-encapsulated, so these only color this renderer's own tiles/badges.
+$white:             #fff;
+$dark:              #4b4b4b;
+$secondary:         #82868b;
+$primary:           #7367f0;
+$success:           #28c76f;
+$danger:            #ea5455;
+$warning:           #ff9f43;
+$body-bg:           #f8f8f8;
+$border-color:      #ebe9f1;
+$card-border-radius: 0.428rem;

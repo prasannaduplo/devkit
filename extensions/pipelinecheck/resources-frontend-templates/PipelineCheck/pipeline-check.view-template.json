@@ -1,0 +1,16 @@
+{
+  "resourceType": "PipelineCheck",
+  "subType": "pipeline-check",
+  "label": "Pipeline Check",
+  "icon": "user",
+  "idField": "id",
+  "groups": [
+    {
+      "name": "Result",
+      "fields": [
+        { "type": "single", "key": "fullName", "label": "Full Name", "value": "result.fullName", "hideWhenEmpty": true },
+        { "type": "single", "key": "status", "label": "Status", "value": "status", "mono": false }
+      ]
+    }
+  ]
+}

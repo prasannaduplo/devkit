@@ -1,0 +1,104 @@
+<ng-container [ngSwitch]="field.type">
+
+  <!-- ── card-level kebab (reused inside every block) ─────────────────────── -->
+  <ng-template #cardKebab>
+    <div class="card-menu" *ngIf="cardMenus()?.length" (click)="$event.stopPropagation()">
+      <div ngbDropdown container="body" placement="bottom-end">
+        <button class="btn btn-sm hide-arrow" ngbDropdownToggle>
+          <i data-feather="more-vertical"></i>
+        </button>
+        <div ngbDropdownMenu>
+          <a *ngFor="let m of cardMenus()" ngbDropdownItem (click)="onCardMenu($event, m.id)">
+            {{ m.label }}
+          </a>
+        </div>
+      </div>
+    </div>
+  </ng-template>
+
+  <!-- ── single tile ─────────────────────────────────────────────────────── -->
+  <div *ngSwitchCase="'single'" class="single-tile"
+       [class.full-width]="asSingle().fullWidth"
+       [class.drillable-tile]="hasSingleDetail()"
+       (click)="hasSingleDetail() ? openSingleDetail() : null">
+    <ng-container *ngTemplateOutlet="cardKebab"></ng-container>
+    <div class="tile-label">{{ field.label }}</div>
+    <div class="tile-value" [class.normal]="asSingle().mono === false">{{ singleValue() }}</div>
+  </div>
+
+  <!-- ── multi pill list ─────────────────────────────────────────────────── -->
+  <div *ngSwitchCase="'multi'" class="multi-block">
+    <ng-container *ngTemplateOutlet="cardKebab"></ng-container>
+    <div class="multi-label">{{ field.label }}</div>
+    <div class="pill-list">
+      <ng-container *ngIf="multiItems() as items">
+        <span *ngFor="let v of items" class="pill">{{ v }}</span>
+        <span *ngIf="!items.length" class="empty-small">None</span>
+      </ng-container>
+    </div>
+  </div>
+
+  <!-- ── table ───────────────────────────────────────────────────────────── -->
+  <div *ngSwitchCase="'table'" class="table-block">
+    <ng-container *ngTemplateOutlet="cardKebab"></ng-container>
+    <div class="table-block-label">{{ field.label }}</div>
+    <ng-container *ngIf="tableRows() as rows">
+      <div *ngIf="rows.length" class="table-responsive">
+        <table class="table table-bordered mb-0">
+          <thead>
+            <tr>
+              <th *ngIf="asTable().rowMenus?.length" class="actions-col"></th>
+              <th *ngFor="let c of asTable().columns">{{ c.label }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let row of rows">
+              <td *ngIf="asTable().rowMenus?.length" class="actions-col">
+                <div ngbDropdown container="body">
+                  <button class="btn btn-sm hide-arrow" ngbDropdownToggle>
+                    <i data-feather="more-vertical"></i>
+                  </button>
+                  <div ngbDropdownMenu>
+                    <a *ngFor="let m of asTable().rowMenus"
+                       ngbDropdownItem
+                       (click)="onRowMenu($event, m.id, row)">
+                      {{ m.label }}
+                    </a>
+                  </div>
+                </div>
+              </td>
+              <td *ngFor="let c of asTable().columns; let i = index">
+                <ng-container *ngIf="c.isStatus; else plainCell">
+                  <span class="badge badge-pill"
+                        [ngClass]="'status-' + cellValue(row, c.key)">
+                    {{ cellValue(row, c.key) }}
+                  </span>
+                </ng-container>
+                <ng-template #plainCell>
+                  <a *ngIf="i === 0 && asTable().details; else plainText"
+                     class="text-primary cursor-pointer"
+                     (click)="openDetail(row, asTable())">
+                    {{ cellValue(row, c.key) }}
+                  </a>
+                  <ng-template #plainText>{{ cellValue(row, c.key) }}</ng-template>
+                </ng-template>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div *ngIf="!rows.length" class="empty-group">No data</div>
+    </ng-container>
+  </div>
+
+  <!-- ── raw collapsible JSON ─────────────────────────────────────────────── -->
+  <div *ngSwitchCase="'raw'" class="raw-block">
+    <ng-container *ngTemplateOutlet="cardKebab"></ng-container>
+    <div class="raw-header" (click)="toggleRaw()">
+      <span class="raw-header-label">{{ field.label }}</span>
+      <i data-feather="chevron-down" class="raw-chevron" [class.open]="rawOpen"></i>
+    </div>
+    <pre *ngIf="rawOpen" class="raw-body">{{ rawJson() }}</pre>
+  </div>
+
+</ng-container>

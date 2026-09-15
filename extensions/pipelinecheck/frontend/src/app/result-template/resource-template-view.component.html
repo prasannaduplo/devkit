@@ -1,0 +1,49 @@
+<ng-container *ngIf="template as t">
+
+  <scrollable-nav-tab>
+    <ul ngbNav #innerNav="ngbNav" [(activeId)]="activeGroup" class="nav nav-tabs flat-tabs">
+      <li *ngFor="let group of visibleGroups(); let i = index; trackBy: trackByIndex" ngbNavItem [ngbNavItem]="i.toString()">
+        <a ngbNavLink>{{ group.name }}</a>
+        <ng-template ngbNavContent>
+          <div class="group-panel">
+
+            <!-- single-field tile grid -->
+            <div *ngIf="singleFields(group).length" class="single-grid">
+              <app-field-renderer
+                *ngFor="let field of singleFields(group)"
+                [field]="field"
+                [data]="data"
+                [subTemplates]="t.subTemplates"
+                (menuAction)="menuAction.emit($event)">
+              </app-field-renderer>
+            </div>
+
+            <!-- full-width single fields (long values like certificates) -->
+            <app-field-renderer
+              *ngFor="let field of fullWidthSingleFields(group)"
+              [field]="field"
+              [data]="data"
+              (menuAction)="menuAction.emit($event)">
+            </app-field-renderer>
+
+            <!-- multi / table / raw -->
+            <app-field-renderer
+              *ngFor="let field of otherFields(group)"
+              [field]="field"
+              [data]="data"
+              [subTemplates]="t.subTemplates"
+              (menuAction)="menuAction.emit($event)">
+            </app-field-renderer>
+
+          </div>
+        </ng-template>
+      </li>
+    </ul>
+  </scrollable-nav-tab>
+
+  <div [ngbNavOutlet]="innerNav" class="mt-1"></div>
+</ng-container>
+
+<div *ngIf="!template" class="empty-group">
+  Loading result template…
+</div>
