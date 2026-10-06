@@ -1,0 +1,1408 @@
+{
+  "$schema_note": "Machine-readable mirror of EXTENSION_BACKLOG.md -- keep both in sync when editing.",
+  "owner": "prasannaduplo",
+  "generated": "2026-08-17",
+  "updated": "2026-09-22",
+  "sweepSources": [
+    "/Users/prasannavenkatesh/Documents/customers/payfinia/repo/devops",
+    "/Users/prasannavenkatesh/Documents/customers/incent/repo/Infrastructure",
+    "/Users/prasannavenkatesh/Documents/customers/incent/repo/Incent",
+    "/Users/prasannavenkatesh/Documents/customers/ (follow-up grep only, for #49/#50 in session 1)",
+    "/Users/prasannavenkatesh/Documents/ai/claude-workspace (session 2 -- master staging area)",
+    "/Users/prasannavenkatesh/Documents/workspace (session 2)",
+    "/Users/prasannavenkatesh/Documents/anjuna (session 2)"
+  ],
+  "securityFlags": [
+    {
+      "path": "clientsavvy/database-migration/steps (in ~/Documents/ai/claude-workspace)",
+      "issue": "Plaintext AWS access key/secret pair. Value not reproduced here or anywhere in this file -- rotate/scrub.",
+      "relatedId": 32
+    },
+    {
+      "path": "duplocloud/shared-dockerfiles/ (in ~/Documents/ai/claude-workspace)",
+      "issue": "Hardcoded plaintext local-admin password ('Password~1234') in a Windows entrypoint script. Scrub before reuse/generalization.",
+      "relatedId": 13
+    },
+    {
+      "path": "Incent/cdc/tables.tfvars (in ~/Documents/ai/claude-workspace)",
+      "issue": "Real customer PII column names (SSN) checked in. Not a credential, but keep out of any genericized/shared version.",
+      "relatedId": 40
+    }
+  ],
+  "tiers": {
+    "reuse-ready": "Working code/tests, close to the extension shape already.",
+    "needs-build-out": "Real artifacts exist but need meaningful engineering to fit the resource lifecycle.",
+    "greenfield": "Notes/asks only, no working code yet."
+  },
+  "extensionTypes": {
+    "Agent": "LLM-driven, multi-step, open-ended reasoning (a mapped skill runs in the provisioning ticket).",
+    "Worker": "Deterministic background job: pure compute or reconcile/apply-with-retry, no LLM.",
+    "Passthrough": "One external object created/updated/deleted synchronously, no agent, no loop.",
+    "No-provision": "Observe-only or provision-on-demand-later; nothing fires on save."
+  },
+  "classifications": {
+    "generic": "Mechanism has no hardcoded business logic for one customer; swap config/credentials and it works anywhere with the same scope.",
+    "customer-specific": "Hardcoded to one customer's app names, tenant layout, or business process."
+  },
+  "firstBuildCandidate": {
+    "id": 36,
+    "decidedOn": "2026-09-16",
+    "why": "Real, tested, working MySQL process already in hand (not just an idea); smallest viable Worker-shaped design with a clean human-approval gate; validated against the DuploCloud backend repo (native feature exists but is unreachable/inert for our purposes -- see id 36 notes) and the company-wide Extension Use Case sheet (no duplicate ask, but a validated category of similar upgrade-automation asks)."
+  },
+  "flaggedPriorities": [
+    21,
+    22,
+    23
+  ],
+  "productExtensionPriorities": {
+    "flaggedBy": "user, 2026-09-15",
+    "criterion": "Implements/upgrades/manages a recognizable 3rd-party enterprise product through DuploCloud with zero customer-specific business logic -- sells to any customer running that product.",
+    "ids": [
+      21,
+      22,
+      35,
+      49,
+      50
+    ]
+  },
+  "newGroundIds": [
+    14,
+    23,
+    24,
+    25,
+    30
+  ],
+  "extensions": [
+    {
+      "id": 1,
+      "name": "Azure RBAC Audit & Remediation Suite",
+      "tier": "reuse-ready",
+      "classification": "generic",
+      "customer": [
+        "Incent"
+      ],
+      "extensionType": "Agent",
+      "scopes": [
+        "azure"
+      ],
+      "sourcePaths": [
+        "phase1a-audit.sh",
+        "phase1a-owner-review.sh",
+        "phase1a-tempadmin-removal.sh",
+        "phase1a-developers-group-remediation.sh"
+      ],
+      "description": "Audits and remediates Azure RBAC issues (owner sprawl, temp admin grants, developer group over-permissioning).",
+      "newGround": false,
+      "notes": "Not found under incent/repo/Infrastructure or incent/repo/Incent in the 2026-09-15 sweep; source likely lives in a different Incent-related checkout.",
+      "status": "Not started",
+      "productExtension": false
+    },
+    {
+      "id": 2,
+      "name": "Cost Management Reporting Pipeline",
+      "tier": "reuse-ready",
+      "classification": "generic",
+      "customer": [
+        "Incent"
+      ],
+      "extensionType": "Worker",
+      "scopes": [
+        "azure",
+        "aws"
+      ],
+      "sourcePaths": [
+        "azure-cost-report.py",
+        "aws-cost-estimator.py",
+        "azure-resource-inventory.py",
+        "azure_sql_trend.py"
+      ],
+      "description": "Generates cost reports and trend analysis across Azure and AWS; has an existing pytest suite.",
+      "newGround": false,
+      "notes": "Not found under incent/repo/Infrastructure or incent/repo/Incent in the 2026-09-15 sweep.",
+      "status": "Not started",
+      "productExtension": false
+    },
+    {
+      "id": 3,
+      "name": "Migration Plan Generator",
+      "tier": "reuse-ready",
+      "classification": "generic",
+      "customer": [
+        "Incent"
+      ],
+      "extensionType": "Agent",
+      "scopes": [
+        "azure",
+        "aws"
+      ],
+      "sourcePaths": [
+        "incent-migration-planner (helpdesk skill)"
+      ],
+      "description": "LLM-driven generation of cloud migration plans from a helpdesk skill.",
+      "newGround": false,
+      "notes": "Not found under incent/repo/Infrastructure or incent/repo/Incent; may relate to incent/repo/Infrastructure docs/plan.md, docs/spec.md content.",
+      "status": "Not started",
+      "productExtension": false
+    },
+    {
+      "id": 4,
+      "name": "Customer/Engagement Tracker",
+      "tier": "reuse-ready",
+      "classification": "generic",
+      "customer": [
+        "Incent"
+      ],
+      "extensionType": "No-provision",
+      "scopes": [],
+      "sourcePaths": [
+        "incent-customer-tracker (helpdesk skill)"
+      ],
+      "description": "Tracks customer engagements as an internal duplo helpdesk tool.",
+      "newGround": false,
+      "notes": "Not found under incent/repo/Infrastructure or incent/repo/Incent in the 2026-09-15 sweep.",
+      "status": "Not started",
+      "productExtension": false
+    },
+    {
+      "id": 5,
+      "name": "Containerization Readiness Assistant",
+      "tier": "reuse-ready",
+      "classification": "generic",
+      "customer": [
+        "Incent"
+      ],
+      "extensionType": "Agent",
+      "scopes": [
+        "azure",
+        "aws"
+      ],
+      "sourcePaths": [
+        "incent-containerization (helpdesk skill)"
+      ],
+      "description": "Assesses workload readiness for containerization.",
+      "newGround": false,
+      "notes": "Not found under incent/repo/Infrastructure or incent/repo/Incent in the 2026-09-15 sweep.",
+      "status": "Not started",
+      "productExtension": false
+    },
+    {
+      "id": 6,
+      "name": "EKS/ASG Instance Scheduler (\"Sleepy Environments\")",
+      "tier": "reuse-ready",
+      "classification": "generic",
+      "customer": [
+        "Payfinia"
+      ],
+      "extensionType": "Worker",
+      "scopes": [
+        "aws",
+        "kubernetes"
+      ],
+      "sourcePaths": [
+        "Automation-StartStop/scripts/manage.sh",
+        "Automation-StartStop/config/inventory.json",
+        "payfinia/repo/devops/automation/scripts/manage.sh",
+        "payfinia/repo/devops/automation/config/inventory.json",
+        "payfinia/repo/devops/.github/workflows/service-control.yml",
+        "payfinia/repo/devops/.github/workflows/sync-inventory.yml"
+      ],
+      "description": "Stops/starts EKS workloads and ASGs on a schedule to cut nonprod cost, with S3 state save/restore.",
+      "newGround": false,
+      "notes": "Confirmed present in payfinia/repo/devops during the 2026-09-15 sweep with matching structure.",
+      "status": "Not started",
+      "productExtension": false
+    },
+    {
+      "id": 7,
+      "name": "Staged Canary Prod Promotion",
+      "tier": "reuse-ready",
+      "classification": "generic",
+      "customer": [
+        "Payfinia"
+      ],
+      "extensionType": "Agent",
+      "scopes": [
+        "aws",
+        "kubernetes"
+      ],
+      "sourcePaths": [
+        "skills/paze-prod-deploy/SKILL.md"
+      ],
+      "description": "Promotes a release nonprod -> cat01 -> prod with approval gates at each stage.",
+      "newGround": false,
+      "notes": null,
+      "status": "Not started",
+      "productExtension": false
+    },
+    {
+      "id": 8,
+      "name": "Self-Hosted GitHub Runner Fleet Manager",
+      "tier": "reuse-ready",
+      "classification": "generic",
+      "customer": [
+        "Payfinia",
+        "Incent"
+      ],
+      "extensionType": "Worker",
+      "scopes": [
+        "github",
+        "aws",
+        "other"
+      ],
+      "sourcePaths": [
+        "custom-runner/duplo-runner-bootstrap.sh",
+        "custom-runner/duplo-runner-status.sh",
+        "incent/repo/Incent/.github/workflows/manage-runners.yml"
+      ],
+      "description": "Starts/stops self-hosted GitHub Actions runner VMs and checks runner-online status; the Incent implementation already calls the DuploCloud platform API directly.",
+      "newGround": false,
+      "notes": "Confirmed as an independent 2nd implementation of the same pattern at Incent during the 2026-09-15 sweep -- strong signal this generalizes cleanly.",
+      "status": "Not started",
+      "productExtension": false
+    },
+    {
+      "id": 9,
+      "name": "MGN/Relay IAM Bootstrapper",
+      "tier": "reuse-ready",
+      "classification": "generic",
+      "customer": [
+        "MoreThanRewards"
+      ],
+      "extensionType": "Passthrough",
+      "scopes": [
+        "aws"
+      ],
+      "sourcePaths": [
+        "vmware-migration/scripts/mgn-agent-iam-setup.sh",
+        "vmware-migration/scripts/relay-vm-iam-setup.sh"
+      ],
+      "description": "Bootstraps IAM roles/policies needed for AWS Application Migration Service (MGN) and relay VMs.",
+      "newGround": false,
+      "notes": null,
+      "status": "Not started",
+      "productExtension": false
+    },
+    {
+      "id": 10,
+      "name": "Multi-Cloud Customer Bootstrapper",
+      "tier": "reuse-ready",
+      "classification": "generic",
+      "customer": [
+        "duplocloud-internal"
+      ],
+      "extensionType": "Agent",
+      "scopes": [
+        "aws",
+        "azure",
+        "gcp"
+      ],
+      "sourcePaths": [
+        "duplocloud/skills/multi-cloud-customer-bootstrap/SKILL.md",
+        "duplocloud/skills/multi-cloud-customer-bootstrap/README.md",
+        "duplocloud/skills/multi-cloud-customer-bootstrap/templates/{aws,gcp,azure,common}/",
+        "duplocloud/skills/multi-cloud-customer-bootstrap/examples/{cdc,cft,incent1,payfinia1,payfinia2}",
+        "workspace/ai/skills/infrastructure/multi-cloud-customer-bootstrap/ (2nd copy)"
+      ],
+      "description": "Takes customer_slug/cloud/environments inputs and emits a standard admin-infra/admin-tenant/app Terraform layout for AWS, GCP, or Azure. Bundled examples/ are literal (not anonymized) copies of real customer implementations kept as reference.",
+      "newGround": false,
+      "status": "Built",
+      "notes": "Confirmed 2026-09-15: already built per its own duplocloud/skills/BACKLOG.md ('Already Built... Ready to upload to DuploCloud AI Studio'). Status changed to Built -- the only item in the backlog past Not started.",
+      "productExtension": false
+    },
+    {
+      "id": 11,
+      "name": "Azure Cross-Subscription Image Sharer",
+      "tier": "reuse-ready",
+      "classification": "generic",
+      "customer": [
+        "duplocloud-internal"
+      ],
+      "extensionType": "Passthrough",
+      "scopes": [
+        "azure"
+      ],
+      "sourcePaths": [
+        "duplocloud/azure/container-image-sharing.sh"
+      ],
+      "description": "Shares a container image across Azure subscriptions.",
+      "newGround": false,
+      "notes": "Confirmed 2026-09-15: the only file in duplocloud/azure/, clean and parameterized, no hardcoded customer data.",
+      "status": "Not started",
+      "productExtension": false
+    },
+    {
+      "id": 12,
+      "name": "Tenant GitHub Workflow Dispatcher",
+      "tier": "reuse-ready",
+      "classification": "generic",
+      "customer": [
+        "clientsavvy"
+      ],
+      "extensionType": "Passthrough",
+      "scopes": [
+        "github"
+      ],
+      "sourcePaths": [
+        "githubworkflow-runs/github-workflow-run-script"
+      ],
+      "description": "A flat list of `gh workflow run --repo clearlyrated/cft-{legacy,modern-api,modern-web} --field duplo_tenant_name=dev02` commands, one per service.",
+      "newGround": false,
+      "notes": "Confirmed 2026-09-15: 9 services covered, 2 (legacy-fed, entrasso) left as unfilled TODOs -- a real but incomplete curated dispatch list.",
+      "status": "Not started",
+      "productExtension": false
+    },
+    {
+      "id": 13,
+      "name": "Windows/IIS Base-Image Generator",
+      "tier": "reuse-ready",
+      "classification": "generic",
+      "customer": [
+        "guru",
+        "questce"
+      ],
+      "extensionType": "Passthrough",
+      "scopes": [
+        "aws",
+        "azure",
+        "gcp"
+      ],
+      "sourcePaths": [
+        "Dockerfile + entrypoint.ps1 pattern (guru/questce)"
+      ],
+      "description": "Builds a Windows/IIS base image from a near-identical Dockerfile+entrypoint.ps1 pattern proven across 2 customers.",
+      "newGround": false,
+      "notes": "Correction 2026-09-15: liftoff/ was re-checked and has no Dockerfile/entrypoint.ps1 at all (only a Cypress CI failure log) -- removed from customer list, was previously miscounted as 3 customers. Zero new-ground risk; recommended as a fast win while #23 is in build-out. A related-but-distinct base-image source exists at duplocloud/shared-dockerfiles/ (legacy ASP.NET 4.8/Server Core 1809+IIS) -- has a hardcoded plaintext local-admin password, scrub before reuse.",
+      "status": "Not started",
+      "productExtension": false
+    },
+    {
+      "id": 14,
+      "name": "Windows SQL Connectivity Doctor",
+      "tier": "needs-build-out",
+      "classification": "generic",
+      "customer": [
+        "Incent"
+      ],
+      "extensionType": "Agent",
+      "scopes": [
+        "aws",
+        "azure",
+        "windows-remote-exec"
+      ],
+      "sourcePaths": [
+        "sql-connection/windows-sql-troubleshoot.ps1"
+      ],
+      "description": "Diagnoses SQL Server connectivity issues on Windows guest OS.",
+      "newGround": true,
+      "notes": "NEW GROUND: needs a Windows remote-execution channel (SSM Run Command or WinRM); not found under incent/repo/Infrastructure or incent/repo/Incent in the sweep.",
+      "status": "Not started",
+      "productExtension": false
+    },
+    {
+      "id": 15,
+      "name": "Generic Helpdesk Skill-Pack -> Extension Conversion",
+      "tier": "needs-build-out",
+      "classification": "generic",
+      "customer": [
+        "Incent"
+      ],
+      "extensionType": "Agent",
+      "scopes": [
+        "aws",
+        "kubernetes"
+      ],
+      "sourcePaths": [
+        "duplo-aws-infra",
+        "duplo-dashboard",
+        "duplo-project-management",
+        "k8s-troubleshooting"
+      ],
+      "description": "Converts prompt-based Q&A helpdesk skills into resource-shaped typed extensions.",
+      "newGround": false,
+      "notes": "Not found under incent/repo/Infrastructure or incent/repo/Incent in the 2026-09-15 sweep; those repos' .claude/skills only contain spec-kit/dev-reference skills.",
+      "status": "Not started",
+      "productExtension": false
+    },
+    {
+      "id": 16,
+      "name": "FedNow OpenSearch Alert Consolidator",
+      "tier": "needs-build-out",
+      "classification": "customer-specific",
+      "customer": [
+        "Payfinia"
+      ],
+      "extensionType": "Worker",
+      "scopes": [
+        "aws"
+      ],
+      "sourcePaths": [
+        "fednow-alerts-opensearch/create_consolidated_monitors.py",
+        "fednow-alerts-opensearch/monitor-payloads/"
+      ],
+      "description": "Consolidates ~214 FedNow OpenSearch monitors down to ~20.",
+      "newGround": false,
+      "notes": null,
+      "status": "Not started",
+      "productExtension": false
+    },
+    {
+      "id": 17,
+      "name": "RTP Alert Definition Manager",
+      "tier": "needs-build-out",
+      "classification": "customer-specific",
+      "customer": [
+        "Payfinia"
+      ],
+      "extensionType": "Worker",
+      "scopes": [
+        "aws"
+      ],
+      "sourcePaths": [
+        "rtp-alerts/ (Fluent Bit config + CloudWatch/OpenSearch alert defs)"
+      ],
+      "description": "Manages RTP payment-rail alert definitions across Fluent Bit/CloudWatch/OpenSearch.",
+      "newGround": false,
+      "notes": null,
+      "status": "Not started",
+      "productExtension": false
+    },
+    {
+      "id": 18,
+      "name": "VPN/TGW Connectivity Doctor",
+      "tier": "needs-build-out",
+      "classification": "generic",
+      "customer": [
+        "Payfinia"
+      ],
+      "extensionType": "Agent",
+      "scopes": [
+        "aws"
+      ],
+      "sourcePaths": [
+        "pfdo-1060-achieva-prod-vpn-issue/scripts/"
+      ],
+      "description": "Diagnoses and fixes VPN/Transit Gateway routing issues (missing TGW route, shared route table). Proactive counterpart is #56 (tunnel/route health monitor + alerting) -- v2 can chain #56's alert into this Agent.",
+      "newGround": false,
+      "notes": "Swept payfinia/repo/devops/vpn-setup/{OnPoint,iThink} for companion automation -- both are customer paperwork (PDF/Excel) only, no scripts; confirms this candidate's automation lives solely in the ticket-path source above.",
+      "status": "Not started",
+      "productExtension": false
+    },
+    {
+      "id": 19,
+      "name": "NLB Targetless Auto-Heal",
+      "tier": "needs-build-out",
+      "classification": "generic",
+      "customer": [
+        "Payfinia"
+      ],
+      "extensionType": "Worker",
+      "scopes": [
+        "aws"
+      ],
+      "sourcePaths": [
+        "known recurring platform bug + diagnostic recipe (aws autoscaling attach-load-balancer-target-groups)"
+      ],
+      "description": "Auto-heals NLBs that lose their target-group attachment, a known recurring platform bug.",
+      "newGround": false,
+      "notes": "High value, low new-ground risk.",
+      "status": "Not started",
+      "productExtension": false
+    },
+    {
+      "id": 20,
+      "name": "Node Group Right-Sizer",
+      "tier": "needs-build-out",
+      "classification": "generic",
+      "customer": [
+        "Payfinia"
+      ],
+      "extensionType": "Worker",
+      "scopes": [
+        "aws",
+        "kubernetes"
+      ],
+      "sourcePaths": [
+        "pfdo-1040-increase-node-group/ (planning notes)"
+      ],
+      "description": "Right-sizes EKS node groups based on workload demand.",
+      "newGround": false,
+      "notes": null,
+      "status": "Not started",
+      "productExtension": false
+    },
+    {
+      "id": 21,
+      "name": "Anjuna Confidential Computing Integration",
+      "tier": "needs-build-out",
+      "classification": "generic",
+      "productExtension": true,
+      "customer": [
+        "Payfinia"
+      ],
+      "extensionType": "Agent",
+      "scopes": [
+        "aws",
+        "kubernetes"
+      ],
+      "sourcePaths": [
+        "anjuna-k8s.sh",
+        "build-/export-anjuna-docker-images.sh",
+        "generate-webhook-tls-cert.sh",
+        "payfinia/repo/devops/infra/terraform/anjuna/anjuna.tf",
+        "payfinia/repo/devops/infra/terraform/anjuna/s3-anjuna-files.tf",
+        "payfinia/repo/devops/infra/terraform/anjuna/helm-charts/anjuna-tools/templates/anjuna-nitro-webhook.yaml",
+        "payfinia/repo/devops/infra/terraform/anjuna/helm-charts/anjuna-tools/templates/anjuna-metrics-server.yaml"
+      ],
+      "description": "Integrates Anjuna confidential-computing enclaves onto Nitro EKS. Priority #1. Note: the live anjuna-tools Helm release is installed by hand (kubectl+helm install), not tracked by the Terraform found in this repo -- build-out needs to decide whether to bring it under management.",
+      "newGround": false,
+      "notes": "Flagged priority. Good BD angle.",
+      "status": "Not started"
+    },
+    {
+      "id": 22,
+      "name": "Anjuna Upgrade Manager",
+      "tier": "reuse-ready",
+      "classification": "generic",
+      "productExtension": true,
+      "customer": [
+        "Payfinia"
+      ],
+      "extensionType": "Worker",
+      "scopes": [
+        "aws",
+        "kubernetes"
+      ],
+      "sourcePaths": [
+        "workspace/scriptlib/aws-utils.sh",
+        "workspace/scriptlib/tf-utils.sh",
+        "workspace/scriptlib/anjuna-version.sh",
+        "anjuna/anjuna-tools/scriptlib/ (stale mirror, older anjuna-version.sh pin)"
+      ],
+      "description": "aws-utils.sh wraps ECR mechanics for a version bump: compares local image digest vs. ECR remote digest via `aws ecr describe-images` and skips the push if they already match (idempotent re-push avoidance). tf-utils.sh wraps the Terraform lifecycle around the EKS Anjuna cluster: guarded tf_apply/tf_destroy/tf_clean, tf_configure_kubectl (terraform output -> aws eks update-kubeconfig), and tf_get_webhook_ca_b64 (reads webhook CA cert from Terraform output, ties into #35).",
+      "newGround": false,
+      "notes": "RESOLVED 2026-09-15 (session 2): real source found, moved from needs-build-out to reuse-ready and from Tier 2 to Tier 1. Previously not found under payfinia/repo/devops (session 1 sweep); turned out to live in the separate ~/Documents/workspace staging area instead.",
+      "status": "Not started"
+    },
+    {
+      "id": 23,
+      "name": "Legacy Windows Discovery & Migration Assistant",
+      "tier": "needs-build-out",
+      "classification": "generic",
+      "customer": [
+        "MoreThanRewards"
+      ],
+      "extensionType": "Agent",
+      "scopes": [
+        "aws",
+        "windows-remote-exec"
+      ],
+      "sourcePaths": [
+        "collect-vm-inventory.bat",
+        "network-bandwidth-test.ps1",
+        "AWS Transform reports"
+      ],
+      "description": "Full VM/IIS/AD/SQL discovery methodology with OS-era routing for legacy Windows migration. Priority #3.",
+      "newGround": true,
+      "notes": "NEW GROUND: needs a remote-execution channel onto Windows guest OS (SSM Run Command or WinRM), same gap class as #24/#25.",
+      "status": "Not started",
+      "productExtension": false
+    },
+    {
+      "id": 24,
+      "name": "SQL Server Backup/Restore-to-S3 Scheduler",
+      "tier": "needs-build-out",
+      "classification": "generic",
+      "customer": [
+        "MoreThanRewards"
+      ],
+      "extensionType": "Worker",
+      "scopes": [
+        "aws",
+        "windows-remote-exec"
+      ],
+      "sourcePaths": [
+        "morethanrewards/vmware-migration/scripts/mssql10-backup-to-s3.ps1"
+      ],
+      "description": "Schedules SQL Server backup/restore to/from S3.",
+      "newGround": true,
+      "notes": "NEW GROUND: Windows remote-execution channel needed. Filename confirmed 2026-09-15.",
+      "status": "Not started",
+      "productExtension": false
+    },
+    {
+      "id": 25,
+      "name": "AD Extract/Restore-to-FSx Scheduler",
+      "tier": "needs-build-out",
+      "classification": "generic",
+      "customer": [
+        "MoreThanRewards"
+      ],
+      "extensionType": "Worker",
+      "scopes": [
+        "aws",
+        "windows-remote-exec"
+      ],
+      "sourcePaths": [
+        "morethanrewards/vmware-migration/scripts/ad1-extract-to-s3.ps1",
+        "morethanrewards/vmware-migration/scripts/ad1-restore-from-s3-to-fsx.ps1"
+      ],
+      "description": "Schedules Active Directory extract/restore to/from FSx.",
+      "newGround": true,
+      "notes": "NEW GROUND: Windows remote-execution channel needed. Restore filename corrected 2026-09-15 -- was previously logged as restore-to-fsx.ps1, actual name is ad1-restore-from-s3-to-fsx.ps1.",
+      "status": "Not started",
+      "productExtension": false
+    },
+    {
+      "id": 26,
+      "name": "Cutover File Relay (continuous sync)",
+      "tier": "needs-build-out",
+      "classification": "generic",
+      "customer": [
+        "MoreThanRewards"
+      ],
+      "extensionType": "Worker",
+      "scopes": [
+        "aws"
+      ],
+      "sourcePaths": [
+        "morethanrewards/vmware-migration/scripts/relay-generic/relay-watch-and-ingest.ps1",
+        "morethanrewards/vmware-migration/scripts/relay-generic/source-package-and-push.bat"
+      ],
+      "description": "Continuously syncs files during a cutover window.",
+      "newGround": false,
+      "notes": "Filenames corrected 2026-09-15 -- were previously logged as shortened watch-and-ingest/source-package-and-push.",
+      "status": "Not started",
+      "productExtension": false
+    },
+    {
+      "id": 27,
+      "name": "Azure VM Patch-Mode Enforcer",
+      "tier": "needs-build-out",
+      "classification": "generic",
+      "customer": [
+        "bplogix"
+      ],
+      "extensionType": "Passthrough",
+      "scopes": [
+        "azure"
+      ],
+      "sourcePaths": [
+        "bplogix/scope"
+      ],
+      "description": "Enforces Azure VM patchMode=AutomaticByPlatform (no native Terraform-provider hook exists).",
+      "newGround": false,
+      "notes": "Confirmed 2026-09-15: bplogix/scope is literally this one ask plus a supporting screenshot (image.png) -- nothing else in the folder.",
+      "status": "Not started",
+      "productExtension": false
+    },
+    {
+      "id": 28,
+      "name": "Incident Runbook Knowledge Base",
+      "tier": "greenfield",
+      "classification": "customer-specific",
+      "customer": [
+        "Payfinia"
+      ],
+      "extensionType": "No-provision",
+      "scopes": [],
+      "sourcePaths": [
+        "one-off incident folders: nginx, nexus, ssh, mysql"
+      ],
+      "description": "Collects one-off incident folders into a searchable knowledge base; individually not reusable, collectively useful.",
+      "newGround": false,
+      "notes": null,
+      "status": "Not started",
+      "productExtension": false
+    },
+    {
+      "id": 29,
+      "name": "IBM MQ Helm Tuning Advisor",
+      "tier": "greenfield",
+      "classification": "generic",
+      "customer": [
+        "Payfinia"
+      ],
+      "extensionType": "Worker",
+      "scopes": [
+        "kubernetes"
+      ],
+      "sourcePaths": [
+        "mqclusterbackup/ (Helm value tuning notes)"
+      ],
+      "description": "Advises on IBM MQ Helm chart value tuning.",
+      "newGround": false,
+      "notes": null,
+      "status": "Not started",
+      "productExtension": false
+    },
+    {
+      "id": 30,
+      "name": "Jira Ticket-Scoping Assistant",
+      "tier": "greenfield",
+      "classification": "generic",
+      "customer": [
+        "Incent"
+      ],
+      "extensionType": "Agent",
+      "scopes": [
+        "other"
+      ],
+      "sourcePaths": [
+        "jira-ticket-analysis/ (manual notes)"
+      ],
+      "description": "Assists in scoping Jira tickets from analysis notes.",
+      "newGround": true,
+      "notes": "NEW GROUND (partially resolved): no extension-shaped Jira sample yet, but #47 (found 2026-09-15) has real Jira REST API code to model the other-scope plumbing on.",
+      "status": "Not started",
+      "productExtension": false
+    },
+    {
+      "id": 31,
+      "name": "Release Strategy Orchestrator",
+      "tier": "greenfield",
+      "classification": "generic",
+      "customer": [
+        "clientsavvy"
+      ],
+      "extensionType": "Agent",
+      "scopes": [
+        "github"
+      ],
+      "sourcePaths": [
+        "clientsavvy/release-process/release-strategy-plan.md"
+      ],
+      "description": "A concrete 'CFT Production Release Strategy' doc: 3-job build->notify->deploy pattern, GitHub Environment approval gates, Slack notify, tag-naming convention across 4 repos (cft-legacy, cft-entra-sso, cft-modern-api, cft-modern-web).",
+      "newGround": false,
+      "notes": "Correction 2026-09-15: terraform-k8s-master.zip was misfiled against this row -- it's an unrelated generic EKS/Helm platform scaffold (60+ add-ons) branded for a different customer ('reejig'); removed from this citation and scope narrowed from gcp/kubernetes to github accordingly.",
+      "status": "Not started",
+      "productExtension": false
+    },
+    {
+      "id": 32,
+      "name": "Cross-Cloud DB Migration Runbook Automator",
+      "tier": "greenfield",
+      "classification": "generic",
+      "customer": [
+        "clientsavvy",
+        "Incent"
+      ],
+      "extensionType": "Agent",
+      "scopes": [
+        "gcp",
+        "aws",
+        "azure"
+      ],
+      "sourcePaths": [
+        "clientsavvy/database-migration/download-bak-from-s3.ps1",
+        "clientsavvy/database-migration/import-cloudsql-bak.ps1",
+        "clientsavvy/database-migration/migrate.ps1",
+        "clientsavvy/database-migration/rename-database.ps1",
+        "clientsavvy/database-migration/upload-bak-to-gcs.ps1",
+        "clientsavvy/database-migration/steps"
+      ],
+      "description": "Automates a cross-cloud DB migration runbook (EC2 SQL Server -> S3 -> GCS -> Cloud SQL, export -> object-storage staging -> cloud-native restore, with polling).",
+      "newGround": false,
+      "notes": "Confirmed 2026-09-15 as real scripts, not docs-only as previously logged. SECURITY: steps contains a plaintext AWS access key/secret pair -- value not reproduced here, rotate/scrub. Upgrade candidate: session-1 sweep found working code for the identical pattern shape at #39 (Azure SQL -> S3 -> RDS, Incent). Worth merging into one pluggable-source/target extension or promoting to Tier 1 once #39 is genericized.",
+      "status": "Not started",
+      "productExtension": false
+    },
+    {
+      "id": 33,
+      "name": "AWS Transform Plan Importer",
+      "tier": "greenfield",
+      "classification": "customer-specific",
+      "customer": [
+        "MoreThanRewards"
+      ],
+      "extensionType": "No-provision",
+      "scopes": [
+        "aws"
+      ],
+      "sourcePaths": [
+        "morethanrewards/vmware-migration/docs/aws-site-aws-transform.md",
+        "morethanrewards/vmware-migration/ (migration_plan_report-*.html, mgn_import_consolidated-*.csv)"
+      ],
+      "description": "Imports AWS Transform-generated migration plan reports.",
+      "newGround": false,
+      "notes": "Exact source path confirmed 2026-09-15.",
+      "status": "Not started",
+      "productExtension": false
+    },
+    {
+      "id": 34,
+      "name": "Internal Ops Playbook Pack",
+      "tier": "greenfield",
+      "classification": "generic",
+      "customer": [
+        "duplocloud-internal"
+      ],
+      "extensionType": "No-provision",
+      "scopes": [],
+      "sourcePaths": [
+        "duplocloud/helpdeskv2/scope",
+        "duplocloud/vm-update/steps"
+      ],
+      "description": "Packages internal ops playbooks for reuse.",
+      "newGround": false,
+      "notes": "DOWNGRADED 2026-09-15, low confidence: re-checked and neither file actually describes an ops playbook. helpdeskv2/scope is a product-scoping note for DuploCloud's own AI Helpdesk v2/ARMOR product; vm-update/steps is a copy-pasted Slack/email thread about personal MDM (Rippling) enrollment -- IT onboarding chatter, not devops automation. Needs re-scoping against a real source before build-out.",
+      "status": "Not started",
+      "productExtension": false
+    },
+    {
+      "id": 35,
+      "name": "Anjuna Nitro Webhook TLS Cert Rotator",
+      "tier": "reuse-ready",
+      "classification": "generic",
+      "productExtension": true,
+      "customer": [
+        "Payfinia"
+      ],
+      "extensionType": "Worker",
+      "scopes": [
+        "kubernetes"
+      ],
+      "sourcePaths": [
+        "payfinia/repo/devops/automation/anjuna-cert-upgrade/README.md",
+        "payfinia/repo/devops/automation/anjuna-cert-upgrade/scripts/00-precheck.sh",
+        "payfinia/repo/devops/automation/anjuna-cert-upgrade/scripts/01-backup-existing.sh",
+        "payfinia/repo/devops/automation/anjuna-cert-upgrade/scripts/02-generate-cert-material.sh",
+        "payfinia/repo/devops/automation/anjuna-cert-upgrade/scripts/03-apply-and-rotate.sh",
+        "payfinia/repo/devops/automation/anjuna-cert-upgrade/lib.sh",
+        "payfinia/repo/devops/automation/anjuna-cert-upgrade/config/nonprod-anjuna-system.env",
+        "payfinia/repo/devops/automation/anjuna-cert-upgrade/config/prod-anjuna-system.env"
+      ],
+      "description": "4-step confirmation-gated rotation of the anjuna-nitro-webhook admission-controller TLS cert: precheck -> backup Secret/Helm-values/webhook-config -> generate new CA+leaf via openssl -> patch the k8s Secret + `helm upgrade --reuse-values` the caBundle + rolling-restart, behind a typed APPLY-<ENV>-ANJUNA-CERT confirmation.",
+      "newGround": false,
+      "notes": "Found 2026-09-15. Distinct from #21 (integration build-out) and #22 (version-upgrade helpers) -- this is cert-lifecycle rotation specifically.",
+      "status": "Not started"
+    },
+    {
+      "id": 36,
+      "name": "RDS Major-Version Upgrade Orchestrator (Blue/Green)",
+      "tier": "reuse-ready",
+      "classification": "generic",
+      "customer": [
+        "Payfinia"
+      ],
+      "extensionType": "Worker",
+      "scopes": [
+        "aws"
+      ],
+      "sourcePaths": [
+        "payfinia/repo/devops/automation/rds-mysql-upgrade/README.md",
+        "payfinia/repo/devops/automation/rds-mysql-upgrade/scripts/00-precheck.sh ... 07-cleanup.sh",
+        "payfinia/repo/devops/automation/rds-mysql-upgrade/scripts/99-rollback-pre-switchover.sh",
+        "payfinia/repo/devops/automation/rds-mysql-upgrade/scripts/99-rollback-post-switchover.sh",
+        "payfinia/repo/devops/automation/rds-mysql-upgrade/scripts/pre-apply-rds-delete-deny.sh",
+        "payfinia/repo/devops/automation/rds-mysql-upgrade/scripts/post-remove-rds-delete-deny.sh",
+        "payfinia/repo/devops/automation/rds-mysql-upgrade/lib.sh",
+        "payfinia/repo/devops/automation/rds-mysql-upgrade/config/p-*.env"
+      ],
+      "description": "Orchestrates a near-zero-downtime RDS major-version upgrade via AWS Blue/Green Deployments instead of in-place (avoiding 10-30+ min hard downtime on a single-AZ payment-rail DB): precheck -> manual snapshot -> target parameter group -> create B/G deployment (guarded by a tenant-scoped IAM Deny on duplomaster so Duplo's own reconciler doesn't delete the green instance mid-creation) -> validate -> switchover -> post-verify -> cleanup (guard removed). v1 shipped as a single-shot automated run, no human-approval gate (see notes).",
+      "newGround": false,
+      "status": "Built",
+      "notes": "BUILT 2026-09-16 as extensions/rdsupgrade/ in this devkit repo (duplo.examples.rdsupgrade v0.1.1), hot-loaded onto helpdesk-dev01.test21-apps.duplocloud.net / prasanna-ws. Internal/proof-of-concept only, not customer-facing. Scope change during build: the originally-planned two-gate approval design (ApproveCutover/ApproveCleanup) was dropped for v1 -- ResourceWorkerBase's multi-tick 'wait indefinitely across ticks' semantics could not be verified (the AI Studio backend source isn't checked out anywhere locally, and neither dev-kit worker sample exercises anything longer than an instant one-shot compute), so v1 runs the whole pipeline automatically in one ApplyAsync call with in-call AWS polling instead of cross-tick waiting. Re-add the approval gate before ever pointing this at a real customer database. AWS Blue/Green supports MySql/PostgreSql/MariaDB/AuroraMySql/AuroraPostgreSql only (confirmed against the DuploCloud backend's own RDSConfiguration.SupportsBlueGreenDeployment()); v1 is tested MySQL-only, schema is engine-parametric. The delete-guard (formerly tracked as a separate #37) is folded in as an internal step -- confirmed via the duplo repo's native AwsRdsBlueGreenManager/RdsBlueGreenApiController that its orphan-protection only covers deployments created through ITS OWN manager (LocalHost-auth-only, feature-flagged off, unreachable from an extension), so our own IAM-Deny guard stays necessary permanently, not just as a stopgap. Verified live: clean build (backend + Angular Native Federation frontend), deployed, registered, and a real create->fail->cleanup test run surfaced a genuine bug (initial AWS-client-resolution sat outside the try/catch, so a scope failure left Result.Phase stuck at 'Requested' with empty StepHistory despite the resource showing Failed) -- fixed, redeployed as v0.1.1, re-verified clean. NOT yet tested: the real AWS happy path -- prasanna-ws has no AWS scope attached, so live RDS calls are unverified. Research precedent for the v2 approval-gate redesign: the duplo repo's native (non-extension) EksUpgradeBase -- a step-chain + persisted-progress-state + periodic-sweep reconciler. Also cross-checked 2026-09-16 against the company-wide 'Extension Use Case' Google Sheet (no duplicate ask, but a cluster of same-shaped asks: EKS Upgrade x3, AMI upgrade, Duplo-Host Patching) and ClickUp extension-testing board (NOT checked, connector not authorized this session).",
+      "productExtension": false
+    },
+    {
+      "id": 37,
+      "name": "(merged into #36) Duplo Reconciler Delete-Guard",
+      "tier": "merged",
+      "classification": "generic",
+      "customer": [
+        "Payfinia (discovered)"
+      ],
+      "extensionType": "Passthrough",
+      "scopes": [
+        "aws"
+      ],
+      "sourcePaths": [
+        "payfinia/repo/devops/automation/rds-mysql-upgrade/pre-apply-rds-delete-deny.sh",
+        "payfinia/repo/devops/automation/rds-mysql-upgrade/post-remove-rds-delete-deny.sh"
+      ],
+      "description": "MERGED into #36, 2026-09-16 -- was tracked standalone, but the user confirmed this was purpose-built as an internal step of the RDS Blue/Green upgrade process, not a general-purpose product. Kept as a stub for history; see #36 for the live entry and the note on why it stays necessary even after the native platform feature ships.",
+      "newGround": false,
+      "notes": "Do not treat as a separate build target. All detail now lives on #36.",
+      "status": "Not started",
+      "productExtension": false
+    },
+    {
+      "id": 38,
+      "name": "RTP TCH Signature Cert Rotator",
+      "tier": "needs-build-out",
+      "classification": "customer-specific",
+      "customer": [
+        "Payfinia"
+      ],
+      "extensionType": "Worker",
+      "scopes": [
+        "kubernetes"
+      ],
+      "sourcePaths": [
+        "payfinia/repo/devops/rtp-automation/signature-keys/"
+      ],
+      "description": "Backup/stage/swap/cutover of a k8s Secret holding TCH's RTP public cert -- editing the underlying .pfx binary data via the Duplo portal corrupts it.",
+      "newGround": false,
+      "notes": "Found 2026-09-15. Same rotate-a-k8s-Secret-safely shape as #35, but tied to TCH/RTP naming and the RTP payment rail specifically. Note (session 2): TCH-Cert-Update-20260807/ in claude-workspace is a DIFFERENT cert -- TCH's network-layer mTLS switch cert for the RTP connection itself, not this application-layer payment-signature cert. Reference/PDF material only, no automation yet; don't conflate the two.",
+      "status": "Not started",
+      "productExtension": false
+    },
+    {
+      "id": 39,
+      "name": "Cross-Cloud SQL Server Migration Pipeline (Azure->S3->RDS)",
+      "tier": "reuse-ready",
+      "classification": "generic",
+      "customer": [
+        "Incent"
+      ],
+      "extensionType": "Worker",
+      "scopes": [
+        "azure",
+        "aws"
+      ],
+      "sourcePaths": [
+        "incent/repo/Infrastructure/scripts/db-migration/_common.sh",
+        "incent/repo/Infrastructure/scripts/db-migration/01-export-azure-db.sh",
+        "incent/repo/Infrastructure/scripts/db-migration/02-copy-to-s3.sh",
+        "incent/repo/Infrastructure/scripts/db-migration/03-restore-to-rds.sh",
+        "incent/repo/Infrastructure/scripts/db-migration/migrate-db.sh"
+      ],
+      "description": "`az sql db export` -> .bacpac to Blob -> download + `aws s3 cp` to staging -> `sqlpackage /Action:Import` (bacpac, with a grant-stripping Python step RDS requires) or RDS-native `rds_restore_database` (.bak) with completion polling; parameterized by a <slug> config lookup, falls back to duplo-jit for AWS creds.",
+      "newGround": false,
+      "notes": "Found 2026-09-15. Working code for the same pattern shape #32 only had docs for (different cloud pair: Azure->AWS vs EC2->GCS->Cloud SQL) -- see #32.",
+      "status": "Not started",
+      "productExtension": false
+    },
+    {
+      "id": 40,
+      "name": "Azure SQL CDC -> S3 Parquet Pipeline Provisioner",
+      "tier": "needs-build-out",
+      "classification": "generic mechanism / customer-specific schema",
+      "customer": [
+        "Incent"
+      ],
+      "extensionType": "Worker / No-provision",
+      "scopes": [
+        "azure",
+        "aws"
+      ],
+      "sourcePaths": [
+        "incent/repo/Infrastructure/change_data_capture/common/",
+        "incent/repo/Infrastructure/change_data_capture/adf/",
+        "incent/repo/Infrastructure/change_data_capture/terraform/",
+        "incent/repo/Infrastructure/change_data_capture/config/dev01/common.tfvars",
+        "incent/repo/Infrastructure/change_data_capture/config/dev01/adf.tfvars",
+        "incent/repo/Infrastructure/change_data_capture/CDC_overview.md"
+      ],
+      "description": "Terraform-provisions ADF + Key Vault + self-hosted Integration Runtime + linked services, then per (database x table) in tfvars generates a CDC-enabled SqlServerSource->ParquetSink dataflow (Snappy, S3) wrapped in a pipeline + monthly trigger; adf/main.tf locals derive resource names from the cross-product automatically.",
+      "newGround": false,
+      "notes": "Found 2026-09-15. The ADF-CDC-to-S3 scaffolding is reusable; the checked-in table column schemas (e.g. incent's Children table) are Symitar/incent business schema and would need to become extension inputs rather than tfvars.",
+      "status": "Not started",
+      "productExtension": false
+    },
+    {
+      "id": 41,
+      "name": "DuploCloud Terraform Multi-Project Deploy Wrapper",
+      "tier": "reuse-ready",
+      "classification": "generic",
+      "customer": [
+        "Incent"
+      ],
+      "extensionType": "Worker / Passthrough",
+      "scopes": [
+        "aws",
+        "other"
+      ],
+      "sourcePaths": [
+        "incent/repo/Infrastructure/devops/infra/scripts/_env.sh",
+        "incent/repo/Infrastructure/devops/infra/scripts/_env_prod.sh",
+        "incent/repo/Infrastructure/devops/infra/scripts/_util.sh",
+        "incent/repo/Infrastructure/devops/infra/scripts/plan.sh",
+        "incent/repo/Infrastructure/devops/infra/scripts/apply.sh",
+        "incent/repo/Infrastructure/devops/infra/scripts/destroy.sh",
+        "incent/repo/Infrastructure/devops/infra/scripts/import.sh",
+        "incent/repo/Infrastructure/devops/infra/scripts/duplo-api.sh",
+        "incent/repo/Infrastructure/.github/workflows/build-terraform.yml"
+      ],
+      "description": "Pulls short-lived AWS creds via DuploCloud JIT (adminproxy/GetJITAwsConsoleAccessUrl), sets S3+DynamoDB Terraform backend per account, selects/creates a workspace per tenant, then runs plan/apply/destroy/import across an ordered stack chain reading upstream remote-state outputs.",
+      "newGround": false,
+      "notes": "Found 2026-09-15. Nothing incent-specific in the scripts themselves (only the stack code/tfvars are).",
+      "status": "Not started",
+      "productExtension": false
+    },
+    {
+      "id": 42,
+      "name": "Customer Deploy Onboarding Flow",
+      "tier": "needs-build-out",
+      "classification": "customer-specific",
+      "customer": [
+        "Incent"
+      ],
+      "extensionType": "Worker",
+      "scopes": [
+        "azure",
+        "github"
+      ],
+      "sourcePaths": [
+        "incent/repo/Incent/scripts/fetch_customer_assets.sh",
+        "incent/repo/Incent/.github/scripts/sync-github-env.sh",
+        "incent/repo/Incent/.github/scripts/run-workflow.sh",
+        "incent/repo/Incent/.github/scripts/run-batch.sh",
+        "incent/repo/Incent/.github/workflows/manage-customers.yml",
+        "incent/repo/Incent/configuration/README.md",
+        "incent/repo/Incent/configuration/manual-run.md"
+      ],
+      "description": "Pulls a customer's live web.config/CSS/images/fonts from Azure App Service via Kudu, exports a secrets JSON, syncs it into a GitHub Environment's vars/secrets, then dispatches the build workflow.",
+      "newGround": false,
+      "notes": "Found 2026-09-15. Pattern (pull cloud config -> sync CI secrets -> trigger deploy) is generic; implementation keyed off Incent's configuration/customers.json.",
+      "status": "Not started",
+      "productExtension": false
+    },
+    {
+      "id": 43,
+      "name": "Admin Portal Config Sync & Deploy",
+      "tier": "needs-build-out",
+      "classification": "customer-specific",
+      "customer": [
+        "Incent"
+      ],
+      "extensionType": "Worker",
+      "scopes": [
+        "azure",
+        "github"
+      ],
+      "sourcePaths": [
+        "incent/repo/Incent/.github/scripts/fetch-admin-config.sh",
+        "incent/repo/Incent/.github/workflows/manage-admin.yml",
+        "incent/repo/Incent/.github/workflows/deploy-admin.yml"
+      ],
+      "description": "Reads the admin App Service's live Web.config via Kudu VFS, extracts connection strings/DevExpress theme, syncs as GitHub vars/secrets, then builds/zips/deploys IncentAdmin.",
+      "newGround": false,
+      "notes": "Found 2026-09-15. Same Kudu-config-pull-and-sync shape as #42, separate pipeline.",
+      "status": "Not started",
+      "productExtension": false
+    },
+    {
+      "id": 44,
+      "name": "Azure App Service Inventory",
+      "tier": "reuse-ready",
+      "classification": "generic",
+      "customer": [
+        "Incent"
+      ],
+      "extensionType": "No-provision",
+      "scopes": [
+        "azure"
+      ],
+      "sourcePaths": [
+        "incent/repo/Incent/scripts/list-all-app-services.sh"
+      ],
+      "description": "One-shot enumeration of App Services across every accessible Azure subscription, writes configuration/masterdata/all-app-services-live.json.",
+      "newGround": false,
+      "notes": "Found 2026-09-15. No Incent business logic -- pure Azure discovery utility.",
+      "status": "Not started",
+      "productExtension": false
+    },
+    {
+      "id": 45,
+      "name": "Multi-Customer Rollback",
+      "tier": "needs-build-out",
+      "classification": "customer-specific",
+      "customer": [
+        "Incent"
+      ],
+      "extensionType": "Worker",
+      "scopes": [
+        "azure",
+        "github"
+      ],
+      "sourcePaths": [
+        "incent/repo/Incent/.github/workflows/rollback.yml",
+        "incent/repo/Incent/.github/scripts/resolve-customer.js"
+      ],
+      "description": "Operator picks a customer key, workflow resolves Azure/GitHub config and runs a Windows self-hosted msdeploy revert with per-customer concurrency guarding.",
+      "newGround": false,
+      "notes": "Found 2026-09-15. 'One-click rollback keyed by tenant config' is a reusable shape, but the picklist/config resolution is Incent-specific.",
+      "status": "Not started",
+      "productExtension": false
+    },
+    {
+      "id": 46,
+      "name": "Master Deploy (Batch Multi-Tenant Release)",
+      "tier": "needs-build-out",
+      "classification": "customer-specific",
+      "customer": [
+        "Incent"
+      ],
+      "extensionType": "Worker",
+      "scopes": [
+        "azure",
+        "github"
+      ],
+      "sourcePaths": [
+        "incent/repo/Incent/.github/workflows/master-deploy.yml",
+        "incent/repo/Incent/.github/scripts/resolve-master-deploy.js",
+        "incent/repo/Incent/.github/scripts/generate-master-deploy.js"
+      ],
+      "description": "Fans a deploy out across up to 5 customer environments chosen from a ~30-tenant picklist in one dispatch.",
+      "newGround": false,
+      "notes": "Found 2026-09-15. Picklist is hardcoded to Incent's tenant roster.",
+      "status": "Not started",
+      "productExtension": false
+    },
+    {
+      "id": 47,
+      "name": "PR-to-Jira Status Sync",
+      "tier": "needs-build-out",
+      "classification": "generic pattern / customer-specific config",
+      "customer": [
+        "Incent"
+      ],
+      "extensionType": "Passthrough",
+      "scopes": [
+        "github",
+        "other"
+      ],
+      "sourcePaths": [
+        "incent/repo/Incent/.github/workflows/jira-merge-to-qaready.yml",
+        "incent/repo/Incent/.github/workflows/jira-pr-review.yml"
+      ],
+      "description": "On merge, transitions the linked Jira ticket to 'QA Ready' (checking a PR-approval custom field, else comments/tags reviewers); on PR approval, posts a Jira comment via a hardcoded GitHub-login->Jira-accountId map.",
+      "newGround": false,
+      "notes": "Found 2026-09-15. Resolves part of #30's NEW GROUND flag -- real Jira REST API code now exists to model the other-scope plumbing on.",
+      "status": "Not started",
+      "productExtension": false
+    },
+    {
+      "id": 48,
+      "name": "IaC Drift & Security Posture Auditor",
+      "tier": "greenfield",
+      "classification": "generic",
+      "customer": [
+        "Payfinia (idea source)"
+      ],
+      "extensionType": "Agent / No-provision",
+      "scopes": [
+        "aws"
+      ],
+      "sourcePaths": [
+        "payfinia/repo/devops/docs/iac-audit/"
+      ],
+      "description": "A one-time manual Terraform-coverage/security audit found untracked API Gateways, VPNs, and security-group findings. No accompanying script exists -- the audit was done by hand.",
+      "newGround": false,
+      "notes": "Found 2026-09-15. Idea-stage only despite the report itself being concrete -- no code artifact to extract yet.",
+      "status": "Not started",
+      "productExtension": false
+    },
+    {
+      "id": 49,
+      "name": "IBM MQ Native HA Deployment & Lifecycle Manager",
+      "tier": "reuse-ready",
+      "classification": "generic",
+      "productExtension": true,
+      "customer": [
+        "Payfinia"
+      ],
+      "extensionType": "Agent (initial deploy) / Worker (upgrade, monitoring, backup)",
+      "scopes": [
+        "aws",
+        "kubernetes"
+      ],
+      "sourcePaths": [
+        "payfinia-ibmmq/GENERATOR-README.md",
+        "payfinia-ibmmq/mq-ha-architecture-v4.md",
+        "payfinia-ibmmq/mq-ha-generator-v4-main.sh",
+        "payfinia-ibmmq/mq-ha-generator-terraform-k8s.sh",
+        "payfinia-ibmmq/mq-ha-generator-phases4-5.sh",
+        "payfinia-ibmmq/payfinia-mq-ha-infrastructure/terraform/ (9 files: versions, variables, vpc, transit-gateway, security-groups, iam, eks, outputs, main)",
+        "payfinia-ibmmq/payfinia-mq-ha-infrastructure/kubernetes/ (8 files: namespace, serviceaccount, storage-class, configmap-mqsc, configmap-mqini, statefulset-mq-ha, service-mq-nlb, network-policy)",
+        "payfinia-ibmmq/payfinia-mq-ha-infrastructure/scripts/ (install.sh, create-secrets.sh, deploy-mq.sh, configure-post-installation.sh, setup-monitoring.sh, setup-alarms.sh, backup-all.sh, test-connectivity.sh, test-failover.sh, cleanup.sh)",
+        "payfinia/repo/ipx.rtp/ipx-infra-setup/ (duplicate copy)",
+        "payfinia-prod/ibmmq-upgrade/qm-config-backup.mqsc",
+        "payfinia-prod/ibmmq-upgrade/statefulset-backup.yaml"
+      ],
+      "description": "v4.0 IaC generator with 95% automation for deploying IBM MQ Native HA (3-5s failover) across 3 AZs on EKS: Phase 1-3 stands up a 3-VPC design (network/MQ-HA/app VPCs over Transit Gateway) + the HA StatefulSet; Phase 4 automates cross-VPC routing/security-group config (parameterized by VPC/SG IDs + partner IPs); Phase 5 automates CloudWatch monitoring/alerting; plus standalone backup and failover-test scripts. Real upgrade-in-place evidence exists (pre-upgrade config/statefulset backup). Only the TCH partner IPs passed as Phase-4 arguments are customer-specific.",
+      "newGround": false,
+      "notes": "Found 2026-09-15 via a follow-up grep across ~/Documents/customers/ (outside the three folders swept for the main backlog update), after the user flagged IBM MQ Native HA as a top strategic 3rd-party product extension alongside Anjuna. Recommend the same implementation/upgrade/management three-way split already modeled for Anjuna (#21/#22/#35) once this goes to build-out. Related but narrower: #29 (Helm value tuning on an existing install).",
+      "status": "Not started"
+    },
+    {
+      "id": 50,
+      "name": "IBM MQ Connect:Direct Integration",
+      "tier": "needs-build-out",
+      "classification": "generic",
+      "productExtension": true,
+      "customer": [
+        "Payfinia"
+      ],
+      "extensionType": "Agent (initial deploy) / Worker (subsequent ops)",
+      "scopes": [
+        "aws"
+      ],
+      "sourcePaths": [
+        "payfinia/ibm-direct-connect/Dockerfile (empty stub)",
+        "payfinia/ibm-direct-connect/scope",
+        "payfinia/ibm-direct-connect/downloads/IBM_CD_V6.4_UNIX_RedHat.tar.Z",
+        "payfinia/ibm-direct-connect/downloads/IBM_CDWS_V6.4.0.0_RedHat_x64.tar.gz",
+        "payfinia/ibm-direct-connect/Payfinia_ConnectDirect_Dev_Setup_Guide (2).md",
+        "payfinia/ibm-directconnect/ConnectDirect_SecurePlus_Installation_Guide.md",
+        "payfinia/ibm-directconnect/questions.md",
+        "payfinia/ibm-directconnect/scope"
+      ],
+      "description": "IBM Sterling Connect:Direct managed file-transfer integration for the TCH/RTP payment rail, commonly paired with MQ (same context as #49). questions.md (ticket PFDO-890) is a real 12-risk scoping document covering VM provisioning, networking, C:D configuration values (node name, listener/API/CDWS ports), TLS certs (rtp-cd-2026.payfinia.net), and detailed Dockerfile design questions (foreground PID 1 vs supervisord, multi-stage build, root vs non-root, config baked-in vs injected, stateful-volume mounts, --privileged requirement for SUID binaries, hostname-pinning, ECR push strategy, healthchecks). Reference guide documents a manual setup validated on Mac (Docker Desktop, linux/amd64 emulation) -- explicitly not yet validated on native Linux. Actual IBM installer binaries are downloaded.",
+      "newGround": false,
+      "notes": "ENRICHED 2026-09-15 (session 2), moved from greenfield to needs-build-out: found in ~/Documents/ai/claude-workspace (the session-1 sweep of ~/Documents/customers/ had found nothing). This is a real, actively-scoped POC -- containerization not yet built, but far past idea-stage.",
+      "status": "Not started"
+    },
+    {
+      "id": 51,
+      "name": "IBM License Service Deployment",
+      "tier": "greenfield",
+      "classification": "generic",
+      "customer": [
+        "Payfinia"
+      ],
+      "extensionType": "Passthrough",
+      "scopes": [
+        "kubernetes"
+      ],
+      "sourcePaths": [
+        "payfinia/ibmmq/IBM-MQ-Native-HA-Implementation.md"
+      ],
+      "description": "IBM's mandatory License Service (ibm-licensing-cluster-scoped Helm chart) for Cloud-Pak/certified-container audit/compliance reporting -- flagged as Critical Gap T-4/T-5/T-6 in the architecture doc, not yet deployed in either NonProd or Prod.",
+      "newGround": false,
+      "notes": "Found 2026-09-15 (session 2). Distinct, small, not-yet-actioned component alongside #49 -- same IBM MQ Native HA context, own deployable unit.",
+      "status": "Not started",
+      "productExtension": false
+    },
+    {
+      "id": 52,
+      "name": "MQ Connectivity Test Client",
+      "tier": "reuse-ready",
+      "classification": "generic",
+      "customer": [
+        "Payfinia"
+      ],
+      "extensionType": "No-provision",
+      "scopes": [
+        "aws",
+        "kubernetes"
+      ],
+      "sourcePaths": [
+        "payfinia/mqclient/ping.py",
+        "payfinia/mqclient/mq_client.py",
+        "payfinia/mqclient/tests/test_ping.py"
+      ],
+      "description": "ping.py is an HTTP health-check against an MQ REST endpoint (mTLS/basic-auth support); mq_client.py uses pymqi to open a SVRCONN channel and send/receive a test message against a real queue. A small, clean, reusable 'verify an MQ queue manager end-to-end via CLI' tool.",
+      "newGround": false,
+      "notes": "Found 2026-09-15 (session 2). Distinct from the Helm/Terraform-focused IBM MQ items (#29, #38, #49) -- a connectivity/smoke-test utility that'd pair well as a verification step inside any of them.",
+      "status": "Not started",
+      "productExtension": false
+    },
+    {
+      "id": 53,
+      "name": "QuickSight RLS Promote Doctor",
+      "tier": "needs-build-out",
+      "classification": "generic",
+      "customer": [
+        "Incent"
+      ],
+      "extensionType": "Worker",
+      "scopes": [
+        "aws"
+      ],
+      "sourcePaths": [
+        "Incent/rls-workflow/promote_rls.sh",
+        "Incent/rls-workflow/substitute_arns.sh"
+      ],
+      "description": "Diagnoses and fixes a recurring CI/CD promote-pipeline failure for QuickSight row-level-security datasets -- substitute_arns.sh swaps environment-specific ARNs during promotion, promote_rls.sh orchestrates the promote.",
+      "newGround": false,
+      "notes": "Found 2026-09-15 (session 2). Generic pattern (any QuickSight RLS promote pipeline hits ARN-substitution issues across environments); the specific ARNs/dataset names are Incent's.",
+      "status": "Not started",
+      "productExtension": false
+    },
+    {
+      "id": 54,
+      "name": "Consolidated Service Deploy Dispatcher",
+      "tier": "needs-build-out",
+      "classification": "generic",
+      "customer": [
+        "clientsavvy"
+      ],
+      "extensionType": "Passthrough",
+      "scopes": [
+        "github"
+      ],
+      "sourcePaths": [
+        "clientsavvy/workflowupdate/docs/superpowers/plans/2026-05-21-cft-legacy-deploy-workflows.md",
+        "clientsavvy/workflowupdate/docs/superpowers/plans/conversation"
+      ],
+      "description": "A design doc (not yet built) for consolidating 11 separate per-service GitHub Actions workflow files into 2 UI-driven workflow_dispatch masters (nonprod/prod) with service + tenant + branch dropdowns and per-tenant service-name resolution.",
+      "newGround": false,
+      "notes": "Found 2026-09-15 (session 2). Related to but distinct from #12 (a curated list of individual dispatch commands, not a consolidated UI) -- the generalizable piece is 'collapse N per-service deploy workflows into one parameterized dispatcher.'",
+      "status": "Not started",
+      "productExtension": false
+    },
+    {
+      "id": 55,
+      "name": "Network Traffic Flow & Audit Overlay",
+      "tier": "greenfield",
+      "classification": "generic",
+      "customer": [
+        "Payfinia (idea source, PFDO-904)"
+      ],
+      "extensionType": "Worker",
+      "scopes": [
+        "aws"
+      ],
+      "sourcePaths": [],
+      "description": "Periodic Worker job polls VPC Flow Logs + CloudTrail (network-relevant API calls), normalizes into TrafficEdge records, correlates source/dest against Duplo's existing Terraform/live-state resource inventory, and flags edges with no matching resource on either end as undeclared. Directly answers Nizar's (Payfinia) confirmed-unmet requirements from the PFDO-904 evaluation call: bidirectional traffic visibility, change attribution for manual AWS changes, and dynamic traffic-flow overlay on the static Terraform graph. Venkat confirmed on that call Duplo does not do this today, no committed roadmap timeline.",
+      "newGround": true,
+      "notes": "Idea-stage, no existing script -- sourced from epic PFDO-904 (2026-06-30 call). IDS-appliance ingestion explicitly out of scope for v1 (epic's Flow-Logs-vs-IDS cost trade-off still open). Topology/graph frontend view has no existing dev-kit sample -- ship list+filter view first, graph view phase 2. Cleanest credential story in the backlog: aws-only, all read-only calls, no other_scopes wiring. 2026-09-22: sibling of #56 (tunnel/route health) and #48 (security posture); build order is #56 first.",
+      "status": "Not started",
+      "productExtension": false
+    },
+    {
+      "id": 56,
+      "name": "VPN/S2S Tunnel & Routing Health Monitor with Alerting",
+      "tier": "greenfield",
+      "classification": "generic",
+      "customer": [
+        "Payfinia (idea source, PFDO-904 / Sanket)"
+      ],
+      "extensionType": "Worker",
+      "scopes": [
+        "aws",
+        "other"
+      ],
+      "sourcePaths": [],
+      "description": "Worker polls configured AWS scopes (multi-account: nonprod/prod/networking) on an interval via DescribeVpnConnections (per-tunnel UP/DOWN status) and DescribeRouteTables (missing TGW/VGW route detection). On a state transition (tunnel down, expected route missing) it writes a persisted incident record (start/end/duration -- an audit trail, not just current state) and fires an alert via a configurable webhook (Slack first, email/SES second).",
+      "newGround": false,
+      "notes": "Sourced 2026-09-22 from PFDO-904 thread: proactive counterpart to #18 (same root cause class as the Achieva prod VPN incident -- missing TGW route, discovered only reactively). Out of scope for v1: traffic-flow correlation (#55's job), security-posture/drift scanning (#48's job), auto-remediation (#18's job -- chaining this Worker's alert into #18's Agent is a v2 idea). Build first among the PFDO-904 network-visibility family; composition with #55/#48 as sibling resources in one bundle is a v2+ decision, not designed now.",
+      "status": "Not started",
+      "productExtension": false
+    },
+    {
+      "id": 57,
+      "name": "VPN Setup from Excel Intake (Customer Gateway Provisioner)",
+      "tier": "greenfield",
+      "classification": "generic",
+      "customer": [
+        "Payfinia (idea source)"
+      ],
+      "extensionType": "Agent",
+      "scopes": [
+        "aws"
+      ],
+      "sourcePaths": [
+        "payfinia/repo/devops/vpn-setup/OnPoint/",
+        "payfinia/repo/devops/vpn-setup/iThink/"
+      ],
+      "description": "Reads an uploaded VPN customer-intake spreadsheet (customer gateway IP, BGP ASN, tunnel config) and provisions the Customer Gateway + VPN Connection + routes -- the process Rohit Singh currently runs by hand from the PDF/Excel intake form.",
+      "newGround": false,
+      "notes": "2026-09-22 repo sweep confirmed no extension or script exists for this today -- only customer-facing intake paperwork (Payfinia-iTHINK AWS_VPN_Customer_Form {PROD,TEST} - 5.19.26.xlsx, OnPoint/iThink PDFs, one literally named '...rohit-update iThink.pdf'). Distinct setup concern from #56's monitoring concern; idea-stage only, not scoped for build.",
+      "status": "Not started",
+      "productExtension": false
+    }
+  ]
+}

@@ -1,0 +1,241 @@
+@import './vars';
+
+:host {
+  display: block;
+}
+
+.group-panel {
+  padding-top: 8px;
+}
+
+// ── single tiles ──────────────────────────────────────────────────────────
+.single-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.single-tile {
+  background: $white;
+  border: 1px solid $border-color;
+  border-radius: $card-border-radius;
+  padding: 12px 14px;
+  position: relative;
+}
+
+.tile-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: $secondary;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+}
+
+.tile-value {
+  font-size: 13px;
+  font-family: 'SF Mono', ui-monospace, Menlo, monospace;
+  color: $dark;
+  word-break: break-all;
+
+  &.normal {
+    font-family: inherit;
+  }
+}
+
+.single-tile.drillable-tile {
+  cursor: pointer;
+
+  &:hover {
+    border-color: $primary;
+    background: rgba($primary, 0.03);
+
+    .tile-value {
+      color: $primary;
+      text-decoration: underline;
+      text-decoration-color: rgba($primary, 0.4);
+      text-underline-offset: 2px;
+    }
+  }
+}
+
+.single-tile.full-width {
+  margin-bottom: 10px;
+
+  .tile-value {
+    word-break: normal;
+    white-space: nowrap;
+    overflow-x: auto;
+  }
+}
+
+// ── multi pills ───────────────────────────────────────────────────────────
+.multi-block {
+  background: $white;
+  border: 1px solid $border-color;
+  border-radius: $card-border-radius;
+  padding: 12px 14px;
+  margin-bottom: 10px;
+  position: relative;
+}
+
+.multi-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: $secondary;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 8px;
+}
+
+.pill-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.pill {
+  background: rgba($primary, 0.08);
+  color: $primary;
+  border-radius: 4px;
+  padding: 3px 9px;
+  font-size: 12px;
+  font-family: 'SF Mono', ui-monospace, Menlo, monospace;
+}
+
+.empty-small {
+  color: $secondary;
+  font-size: 12px;
+}
+
+// ── table ─────────────────────────────────────────────────────────────────
+// Plain Bootstrap responsive table — same convention as setup-status and the
+// skill-mapping modal. Only wrapping chrome + status colors need local rules.
+.table-block {
+  background: $white;
+  border: 1px solid $border-color;
+  border-radius: $card-border-radius;
+  margin-bottom: 10px;
+  position: relative;
+  overflow: hidden;
+}
+
+.table-block-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: $dark;
+  padding: 10px 14px 8px;
+}
+
+.actions-col {
+  width: 50px;
+  min-width: 50px;
+  max-width: 50px;
+  text-align: center;
+  white-space: nowrap;
+  padding-left: 8px !important;
+  padding-right: 8px !important;
+}
+
+// Status badge colors (applied via [ngClass]="'status-' + value")
+.badge-pill {
+  &.status-available,
+  &.status-attached,
+  &.status-True,
+  &.status-ACTIVE,
+  &.status-Running,
+  &.status-running,
+  &.status-active,
+  // ClusterAttributes — component installs (Python skill emits "deployed";
+  // schema enum uses "Installed"). Both mean "healthy and in-cluster".
+  &.status-deployed,
+  &.status-Deployed,
+  &.status-Installed,
+  &.status-installed  { background: $success; color: $white; }
+
+  &.status-failed,
+  &.status-Failed,
+  &.status-False,
+  &.status-CrashLoopBackOff,
+  &.status-Error      { background: $danger; color: $white; }
+
+  &.status-Pending,
+  // ClusterAttributes — component-install path that needs user follow-up.
+  &.status-ManualRequired,
+  &.status-Warning    { background: $warning; color: $white; }
+
+  // ClusterAttributes — component skipped because the cluster shape made it
+  // moot (Auto Mode owns the component, or the component isn't supported on
+  // this cluster). Visually muted because nothing is wrong — just not active.
+  &.status-NotApplicable,
+  &.status-NotApplicable_AutoMode,
+  &.status-NotSupported,
+  &.status-Skipped    { background: $secondary; color: $white; }
+}
+
+// ── raw block ─────────────────────────────────────────────────────────────
+.raw-block {
+  background: $white;
+  border: 1px solid $border-color;
+  border-radius: $card-border-radius;
+  overflow: hidden;
+  margin-bottom: 10px;
+  position: relative;
+}
+
+// ── card-level kebab — positioned top-right of any field block ────────────
+.card-menu {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 2;
+}
+
+.raw-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  cursor: pointer;
+  user-select: none;
+
+  &:hover { background: $body-bg; }
+}
+
+.raw-header-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: $dark;
+}
+
+.raw-chevron {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  color: $secondary;
+  transition: transform 0.2s ease;
+
+  &.open { transform: rotate(180deg); }
+}
+
+.raw-body {
+  background: $dark;
+  color: $white;
+  padding: 14px 16px;
+  font-family: 'SF Mono', ui-monospace, Menlo, monospace;
+  font-size: 11px;
+  line-height: 1.7;
+  white-space: pre;
+  overflow: auto;
+  max-height: 300px;
+  margin: 0;
+}
+
+// ── empty state ───────────────────────────────────────────────────────────
+.empty-group {
+  padding: 6px 14px 8px;
+  color: $secondary;
+  font-size: 12px;
+}
+

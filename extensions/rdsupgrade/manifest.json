@@ -1,0 +1,56 @@
+{
+  "manifestVersion": "1.0",
+  "id": "duplo.examples.rdsupgrade",
+  "name": "RDS Upgrade",
+  "version": "0.1.1",
+
+  "sdkVersion": "REPLACED_BY_SKILL_FROM_sdk-version_ENDPOINT",
+  "backend": {
+    "assemblyDir": "duplo.examples.rdsupgrade/0.1.1/backend",
+    "entryAssembly": "Duplo.Extension.RdsUpgrade.dll"
+  },
+
+  "resources": [
+    {
+      "ticketOriginType": "RdsUpgrade",
+      "restSegment": "extensions/rdsupgrades",
+      "subType": "rds-upgrade",
+      "archetype": "typed",
+      "registrar": "DevOpsResource",
+      "entityType": "Duplo.Extension.RdsUpgrade.RdsUpgrade",
+      "specType": "Duplo.Extension.RdsUpgrade.RdsUpgradeSpec",
+      "resultType": "Duplo.Extension.RdsUpgrade.RdsUpgradeResult",
+      "hooksType": "Duplo.Extension.RdsUpgrade.RdsUpgradeHooks",
+      "serviceType": "Duplo.Extension.RdsUpgrade.RdsUpgradeService"
+    }
+  ],
+
+  "frontend": {
+    "remote": {
+      "remoteName": "duploExtensionRdsUpgrade",
+      "remoteEntry": "/v1/aiservicedesk/extensions/duplo.examples.rdsupgrade/fe/remoteEntry.json",
+      "exposedModule": "./Extension",
+      "type": "module"
+    },
+    "menus": [
+      {
+        "id": "duplo.examples.rdsupgrade-devops",
+        "title": "DevOps",
+        "type": "collapsible-section",
+        "children": [
+          {
+            "id": "duplo.examples.rdsupgrade-rds-upgrade",
+            "title": "RDS Upgrade",
+            "type": "item",
+            "matIcon": "database",
+            "relativeUrl": "extensions/rdsupgrades",
+            "order": 46
+          }
+        ]
+      }
+    ],
+    "routes": [
+      { "path": "extensions/rdsupgrades", "resourceType": "RdsUpgrade", "subType": "rds-upgrade" }
+    ]
+  }
+}

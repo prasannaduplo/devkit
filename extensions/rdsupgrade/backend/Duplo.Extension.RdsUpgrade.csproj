@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Backend for the RdsUpgrade extension — compiled by the duplo-extension-dev skill with `dotnet publish`.
+    The SDK is referenced compile-only (ExcludeAssets="runtime") and exact-pinned to the running host
+    version, so the extension ships only its own DLL and shares the host's SDK type identity at load time.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseAppHost>false</UseAppHost>
+    <IsPackable>false</IsPackable>
+    <!-- Overridden by the build skill: -p:DuploSdkVersion=<value from sdk-version> -->
+    <DuploSdkVersion Condition="'$(DuploSdkVersion)' == ''">1.0.0</DuploSdkVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Duplocloud.AiHelpdesk.Sdk" Version="[$(DuploSdkVersion)]" ExcludeAssets="runtime" />
+    <!-- RDS Blue/Green calls + the IAM Deny guard against Duplo's own reconciler. The SDK's transitive
+         closure pins AWSSDK.Core to the 4.x line (via AWSSDK.CloudWatchLogs) — RDS/IdentityManagement must
+         be a version built against that same Core major, so float to the latest 4.x rather than an exact
+         3.7.x pin (which depends on Core 3.x and conflicts). Let NuGet pick AWSSDK.Core transitively —
+         pinning it ourselves just creates a downgrade conflict against whatever RDS/IdentityManagement need. -->
+    <PackageReference Include="AWSSDK.RDS" Version="4.*" />
+    <PackageReference Include="AWSSDK.IdentityManagement" Version="4.*" />
+  </ItemGroup>
+
+</Project>
