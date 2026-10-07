@@ -5,7 +5,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Duplo.Extension.RdsUpgrade;
 
-/// <summary>Workspace-scoped REST controller for the worker-backed RdsUpgrade resource.</summary>
+/// <summary>Workspace-scoped REST controller for the agent-provisioned RdsUpgrade resource.</summary>
 [ApiController]
 [Route("v1/aiservicedesk/user/data/workspaces/{workspaceId}/environment/extensions/rdsupgrades")]
 public class RdsUpgradeController : ResourcesController<RdsUpgrade, RdsUpgradeSpec, RdsUpgradeResult>

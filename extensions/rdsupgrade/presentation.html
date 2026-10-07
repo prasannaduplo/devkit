@@ -1,0 +1,342 @@
+<title>RDS Upgrade Extension</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  /* Layout concept: single-page scroll narrative, numbered build chapters (a real timeline, not decoration).
+     Blue/Green duality (the subject's own vocabulary) IS the accent system -- blue=source/before,
+     green=target/after, amber=the constraint we discovered along the way. */
+  :root {
+    --bg: #F7F9FC;
+    --surface: #FFFFFF;
+    --surface-sunken: #EEF2F8;
+    --ink: #131A2B;
+    --muted: #5B6B82;
+    --faint: #93A2B8;
+    --border: #E3E8F0;
+    --blue: #2563EB;
+    --blue-tint: #EAF1FF;
+    --green: #15803D;
+    --green-tint: #E9F8EF;
+    --amber: #B45309;
+    --amber-tint: #FEF3E2;
+    --red: #B91C1C;
+    --red-tint: #FDECEC;
+    --font-display: 'IBM Plex Sans', -apple-system, sans-serif;
+    --font-body: 'IBM Plex Sans', -apple-system, sans-serif;
+    --font-mono: 'IBM Plex Mono', ui-monospace, Menlo, monospace;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0B1120; --surface: #121A2C; --surface-sunken: #0E1526; --ink: #EAF0FA;
+      --muted: #94A7C4; --faint: #5B6B82; --border: #223049;
+      --blue: #5B9BFF; --blue-tint: #15233F; --green: #4ADE80; --green-tint: #113321;
+      --amber: #F3A64E; --amber-tint: #3A2611; --red: #F38A8A; --red-tint: #3A1515;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0B1120; --surface: #121A2C; --surface-sunken: #0E1526; --ink: #EAF0FA;
+    --muted: #94A7C4; --faint: #5B6B82; --border: #223049;
+    --blue: #5B9BFF; --blue-tint: #15233F; --green: #4ADE80; --green-tint: #113321;
+    --amber: #F3A64E; --amber-tint: #3A2611; --red: #F38A8A; --red-tint: #3A1515;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  body { background: var(--bg); color: var(--ink); font-family: var(--font-body); line-height: 1.5; }
+  .wrap { max-width: 880px; margin: 0 auto; padding-inline: 20px; }
+  h1, h2, h3 { font-family: var(--font-display); font-weight: 700; text-wrap: balance; margin: 0; }
+  code, .mono { font-family: var(--font-mono); }
+  a { color: var(--blue); }
+
+  /* ── top bar ── */
+  .topbar { border-bottom: 1px solid var(--border); padding-block: 14px; position: sticky; top: env(safe-area-inset-top, 0px); background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(8px); z-index: 10; }
+  .topbar-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .brand { font-family: var(--font-display); font-weight: 700; font-size: 15px; letter-spacing: -0.01em; }
+  .brand .dot { color: var(--green); }
+  .badge-live { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--green); background: var(--green-tint); border-radius: 999px; padding: 5px 12px; }
+  .badge-live::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
+
+  /* ── hero ── */
+  .hero { padding-block: 56px 40px; }
+  .eyebrow { font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin-bottom: 14px; }
+  .hero h1 { font-size: clamp(32px, 5.5vw, 48px); line-height: 1.08; letter-spacing: -0.02em; max-width: 14ch; }
+  .hero p.lede { font-size: 17px; color: var(--muted); max-width: 54ch; margin-top: 16px; }
+
+  .stat-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; margin-top: 36px; }
+  @media (max-width: 640px) { .stat-row { grid-template-columns: 1fr; } }
+  .stat-tile { background: var(--surface); padding: 20px 22px; }
+  .stat-num { font-family: var(--font-mono); font-size: 28px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .stat-num.blue { color: var(--blue); } .stat-num.green { color: var(--green); } .stat-num.amber { color: var(--amber); }
+  .stat-label { font-size: 13px; color: var(--muted); margin-top: 4px; }
+
+  /* ── sections ── */
+  section { padding-block: 48px; border-top: 1px solid var(--border); }
+  .chapter-no { font-family: var(--font-mono); font-size: 13px; color: var(--faint); font-weight: 600; }
+  .section-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 8px; }
+  h2 { font-size: 24px; letter-spacing: -0.01em; }
+  .section-sub { color: var(--muted); font-size: 15.5px; max-width: 62ch; margin-top: 10px; }
+
+  .callout { background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--blue); border-radius: 10px; padding: 16px 18px; margin-top: 20px; font-size: 14.5px; color: var(--ink); }
+  .callout .who { color: var(--muted); font-size: 12.5px; margin-top: 8px; }
+
+  /* ── phase stepper (recreated from the shipped extension's own UI) ── */
+  .stepper { display: flex; overflow-x: auto; padding: 18px 2px 6px; gap: 0; margin-top: 24px; }
+  .step { display: flex; flex-direction: column; align-items: center; min-width: 84px; position: relative; flex-shrink: 0; }
+  .step .line { position: absolute; top: 17px; left: calc(-50% + 17px); width: calc(100% - 34px); height: 2px; background: var(--green); }
+  .step:first-child .line { display: none; }
+  .circle { width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: var(--green-tint); border: 2px solid var(--green); color: var(--green); z-index: 1; }
+  .circle svg { width: 15px; height: 15px; }
+  .step.final .circle { background: var(--blue); border-color: var(--blue); color: #fff; }
+  .step-label { margin-top: 7px; font-size: 10.5px; font-weight: 600; color: var(--muted); text-align: center; }
+
+  /* ── discovery timeline ── */
+  .discoveries { margin-top: 24px; display: flex; flex-direction: column; gap: 0; }
+  .discovery { display: grid; grid-template-columns: 28px 1fr; gap: 14px; padding-block: 16px; border-top: 1px solid var(--border); }
+  .discovery:first-child { border-top: none; }
+  .d-icon { width: 28px; height: 28px; border-radius: 8px; display: flex; align-items: center; justify-content: center; background: var(--amber-tint); color: var(--amber); flex-shrink: 0; }
+  .d-icon svg { width: 15px; height: 15px; }
+  .d-title { font-weight: 600; font-size: 14.5px; }
+  .d-body { color: var(--muted); font-size: 14px; margin-top: 4px; max-width: 64ch; }
+  .d-body code { background: var(--surface-sunken); border-radius: 4px; padding: 1px 5px; font-size: 12.5px; }
+
+  /* ── 97s chart ── */
+  .chart-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 24px 26px; margin-top: 24px; }
+  .chart-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .chart-title { font-weight: 600; font-size: 14.5px; }
+  .chart-sub { font-size: 12.5px; color: var(--muted); font-family: var(--font-mono); }
+  .bars { display: flex; align-items: flex-end; gap: 28px; height: 160px; margin-top: 28px; padding: 0 8px; border-bottom: 1px solid var(--border); position: relative; }
+  .bars::before { content: ''; position: absolute; left: 0; right: 0; bottom: 100px; height: 1px; background: var(--border); opacity: .6; }
+  .bar-col { display: flex; flex-direction: column; align-items: center; flex: 1; max-width: 90px; }
+  .bar-val { font-family: var(--font-mono); font-size: 13px; font-weight: 600; color: var(--amber); margin-bottom: 6px; font-variant-numeric: tabular-nums; }
+  .bar { width: 100%; background: var(--amber); border-radius: 5px 5px 2px 2px; }
+  .bar-cap { font-size: 11px; color: var(--muted); margin-top: 8px; text-align: center; }
+  .chart-note { font-size: 12.5px; color: var(--faint); margin-top: 6px; }
+
+  /* ── pivot comparison ── */
+  .pivot { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 24px; }
+  @media (max-width: 600px) { .pivot { grid-template-columns: 1fr; } }
+  .pivot-card { border-radius: 12px; padding: 18px 20px; border: 1px solid var(--border); }
+  .pivot-card.before { background: var(--red-tint); border-color: color-mix(in srgb, var(--red) 30%, var(--border)); }
+  .pivot-card.after { background: var(--green-tint); border-color: color-mix(in srgb, var(--green) 30%, var(--border)); }
+  .pivot-tag { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
+  .pivot-card.before .pivot-tag { color: var(--red); } .pivot-card.after .pivot-tag { color: var(--green); }
+  .pivot-head { font-family: var(--font-mono); font-weight: 600; font-size: 15px; margin-top: 6px; }
+  .pivot-body { font-size: 13.5px; color: var(--muted); margin-top: 6px; }
+
+  /* ── proof runs ── */
+  .run-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 22px 24px; margin-top: 18px; }
+  .run-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .run-path { font-family: var(--font-mono); font-size: 16px; font-weight: 600; }
+  .run-path .arrow { color: var(--faint); margin: 0 8px; }
+  .run-path .from { color: var(--blue); } .run-path .to { color: var(--green); }
+  .run-meta { font-size: 12.5px; color: var(--muted); font-family: var(--font-mono); }
+  .run-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 16px; }
+  @media (max-width: 560px) { .run-grid { grid-template-columns: 1fr; } }
+  .run-field { border: 1px solid var(--border); border-radius: 8px; padding: 9px 12px; }
+  .run-field-label { font-size: 10.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+  .run-field-val { font-family: var(--font-mono); font-size: 12.5px; margin-top: 3px; word-break: break-all; }
+
+  /* ── roadmap ── */
+  .roadmap { margin-top: 22px; display: flex; flex-direction: column; gap: 10px; }
+  .road-item { display: flex; gap: 12px; align-items: flex-start; }
+  .road-check { width: 20px; height: 20px; border-radius: 50%; border: 2px solid var(--faint); flex-shrink: 0; margin-top: 1px; }
+  .road-text { font-size: 14.5px; }
+  .road-text b { font-weight: 600; }
+
+  /* ── FAQ ── */
+  .faq { margin-top: 20px; display: flex; flex-direction: column; gap: 10px; }
+  details { border: 1px solid var(--border); border-radius: 10px; background: var(--surface); padding: 2px 18px; }
+  summary { cursor: pointer; font-weight: 600; font-size: 14.5px; padding-block: 14px; list-style: none; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+  summary::-webkit-details-marker { display: none; }
+  summary::after { content: '+'; font-family: var(--font-mono); color: var(--faint); font-size: 18px; flex-shrink: 0; }
+  details[open] summary::after { content: '–'; }
+  .faq-answer { font-size: 14px; color: var(--muted); padding-bottom: 16px; max-width: 66ch; }
+
+  footer { padding-block: 40px 56px; }
+  .foot-line { font-size: 13px; color: var(--faint); display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .reveal { animation: rise .5s ease-out both; }
+    @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+  }
+</style>
+
+<div class="topbar">
+  <div class="wrap topbar-row">
+    <div class="brand">RDS Upgrade<span class="dot">.</span>extension</div>
+    <span class="badge-live">2 live upgrades proven</span>
+  </div>
+</div>
+
+<div class="hero wrap reveal">
+  <div class="eyebrow">DuploCloud Platform Extension — Proof of Concept</div>
+  <h1>Zero-downtime major-version RDS upgrades, on demand</h1>
+  <p class="lede">A self-service extension that runs AWS RDS Blue/Green Deployments end to end — precheck, snapshot, cutover, cleanup — so a major engine upgrade no longer means a maintenance window or an engineer running scripts by hand.</p>
+
+  <div class="stat-row">
+    <div class="stat-tile"><div class="stat-num blue">2</div><div class="stat-label">real upgrades completed live</div></div>
+    <div class="stat-tile"><div class="stat-num green">5.7 → 8.0 → 8.4</div><div class="stat-label">MySQL major versions, chained</div></div>
+    <div class="stat-tile"><div class="stat-num amber">0</div><div class="stat-label">orphaned AWS resources</div></div>
+  </div>
+</div>
+
+<section class="wrap">
+  <div class="section-head"><span class="chapter-no">01</span><h2>The problem</h2></div>
+  <p class="section-sub">Payfinia's payment-rail databases needed major-version upgrades without the 10–30+ minutes of hard downtime an in-place upgrade causes. The fix — AWS Blue/Green Deployments — already existed, but running it was a hand-operated shell-script process: precheck, snapshot, stand up a parallel "green" environment, validate, cut traffic over, clean up the old side. Every step was a judgment call an engineer made live.</p>
+  <div class="callout">
+    "I can't have a maintenance window on a payment rail." — the premise this extension is built against.
+  </div>
+</section>
+
+<section class="wrap">
+  <div class="section-head"><span class="chapter-no">02</span><h2>What it automates</h2></div>
+  <p class="section-sub">One resource, nine phases, the same sequence the manual runbook used — now driven by the platform instead of a terminal.</p>
+  <div class="stepper">
+    <div class="step"><div class="line"></div><div class="circle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg></div><div class="step-label">Precheck</div></div>
+    <div class="step"><div class="line"></div><div class="circle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg></div><div class="step-label">Snapshot</div></div>
+    <div class="step"><div class="line"></div><div class="circle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="21" x2="4" y2="14"></line><line x1="4" y1="10" x2="4" y2="3"></line><line x1="12" y1="21" x2="12" y2="12"></line><line x1="12" y1="8" x2="12" y2="3"></line><line x1="20" y1="21" x2="20" y2="16"></line><line x1="20" y1="12" x2="20" y2="3"></line></svg></div><div class="step-label">Param Group</div></div>
+    <div class="step"><div class="line"></div><div class="circle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="6" y1="3" x2="6" y2="15"></line><circle cx="18" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><path d="M18 9a9 9 0 0 1-9 9"></path></svg></div><div class="step-label">Blue/Green</div></div>
+    <div class="step"><div class="line"></div><div class="circle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg></div><div class="step-label">Validate</div></div>
+    <div class="step"><div class="line"></div><div class="circle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"></polyline><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><polyline points="7 23 3 19 7 15"></polyline><path d="M21 13v2a4 4 0 0 1-4 4H3"></path></svg></div><div class="step-label">Switchover</div></div>
+    <div class="step"><div class="line"></div><div class="circle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg></div><div class="step-label">Verify</div></div>
+    <div class="step"><div class="line"></div><div class="circle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"></path></svg></div><div class="step-label">Cleanup</div></div>
+    <div class="step final"><div class="line"></div><div class="circle"><svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path><line x1="4" y1="22" x2="4" y2="15" stroke-width="2" fill="none"></line></svg></div><div class="step-label">Completed</div></div>
+  </div>
+</section>
+
+<section class="wrap">
+  <div class="section-head"><span class="chapter-no">03</span><h2>What building it actually found</h2></div>
+  <p class="section-sub">Four real, verified discoveries along the way — the kind of thing you only learn by running it against a real account.</p>
+
+  <div class="discoveries">
+    <div class="discovery">
+      <div class="d-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg></div>
+      <div>
+        <div class="d-title">AWS Blue/Green rejects Secrets-Manager-managed passwords</div>
+        <div class="d-body">A source instance with <code>ManageMasterUserPassword</code> enabled fails <code>CreateBlueGreenDeployment</code> outright — an AWS limitation undocumented until we hit it on a real instance.</div>
+      </div>
+    </div>
+    <div class="discovery">
+      <div class="d-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg></div>
+      <div>
+        <div class="d-title">Duplo's own reconciler can delete your in-progress upgrade</div>
+        <div class="d-body">The "green" instance isn't recognized as managed the moment it's created, so the tenant reconciler can reap it mid-build. Fixed with a scoped IAM Deny on <code>duplomaster</code>, targeting only that instance's ARN, attached and detached automatically around the risky window.</div>
+      </div>
+    </div>
+    <div class="discovery">
+      <div class="d-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg></div>
+      <div>
+        <div class="d-title">Worker-mode has a hard ~97 second ceiling</div>
+        <div class="d-body">Background-worker provisioning gets cancelled by the platform's own dispatcher well before a Blue/Green deployment can finish — confirmed with hard evidence, not a guess. See below.</div>
+      </div>
+    </div>
+    <div class="discovery">
+      <div class="d-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 18l6-6-6-6M8 6l-6 6 6 6"></path></svg></div>
+      <div>
+        <div class="d-title">A ticket's token can't read its own resource</div>
+        <div class="d-body">A provisioning ticket is authorized only for <code>.../status</code> and <code>.../results</code> — a plain <code>GET</code> on the resource itself is refused. Resuming after a retry means reading prior progress from <code>/results</code>, not the resource endpoint.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="wrap">
+  <div class="section-head"><span class="chapter-no">04</span><h2>The ~97 second ceiling, measured</h2></div>
+  <p class="section-sub">Three independent Blue/Green deployments, each torn down by the platform at almost exactly the same mark — read straight from CloudTrail, not estimated.</p>
+
+  <div class="chart-card">
+    <div class="chart-head">
+      <span class="chart-title">Time from CreateBlueGreenDeployment to the platform's own DeleteBlueGreenDeployment</span>
+      <span class="chart-sub">source: CloudTrail, 2026-10-07</span>
+    </div>
+    <div class="bars">
+      <div class="bar-col"><div class="bar-val">97s</div><div class="bar" style="height:97px"></div><div class="bar-cap">Attempt 1<br><span class="mono" style="font-size:10.5px">05:31:04 → 05:32:41</span></div></div>
+      <div class="bar-col"><div class="bar-val">97s</div><div class="bar" style="height:97px"></div><div class="bar-cap">Attempt 2<br><span class="mono" style="font-size:10.5px">05:57:07 → 05:58:44</span></div></div>
+      <div class="bar-col"><div class="bar-val">96s</div><div class="bar" style="height:96px"></div><div class="bar-cap">Attempt 3<br><span class="mono" style="font-size:10.5px">06:09:46 → 06:11:22</span></div></div>
+    </div>
+    <div class="chart-note">Every deployment was still <code class="mono">PROVISIONING</code> when cancelled. AWS Blue/Green typically needs 10–20 minutes.</div>
+  </div>
+
+  <div class="pivot">
+    <div class="pivot-card before">
+      <div class="pivot-tag">v1 — Worker mode</div>
+      <div class="pivot-head">ApplyAsync, single background call</div>
+      <div class="pivot-body">Cancelled ~97s in, every time. No documented way to raise the limit or confirm a multi-tick resume contract.</div>
+    </div>
+    <div class="pivot-card after">
+      <div class="pivot-tag">v2 — Agent mode</div>
+      <div class="pivot-head">HelpDesk ticket, same orchestration</div>
+      <div class="pivot-body">Proven to run 26+ minutes clean, twice, with an explicit configurable timeout instead of a hidden platform constant.</div>
+    </div>
+  </div>
+</section>
+
+<section class="wrap">
+  <div class="section-head"><span class="chapter-no">05</span><h2>Proof: two real upgrades</h2></div>
+  <p class="section-sub">Both against a live, disposable test instance in a sandboxed AWS account — full Blue/Green lifecycle, zero manual cleanup.</p>
+
+  <div class="run-card">
+    <div class="run-top">
+      <div class="run-path"><span class="from">5.7.44</span><span class="arrow">→</span><span class="to">8.0.46</span></div>
+      <div class="run-meta">run5 · Complete</div>
+    </div>
+    <div class="run-grid">
+      <div class="run-field"><div class="run-field-label">Blue/Green deployment</div><div class="run-field-val">bgd-oobswo1egc6b4mnm</div></div>
+      <div class="run-field"><div class="run-field-label">Old instance — removed at cleanup</div><div class="run-field-val">rdsupgrade-fixture-mysql2-old1</div></div>
+      <div class="run-field" style="grid-column:1/-1"><div class="run-field-label">Final endpoint</div><div class="run-field-val">rdsupgrade-fixture-mysql2.clda7d8uva7m.us-east-1.rds.amazonaws.com:3306</div></div>
+    </div>
+  </div>
+
+  <div class="run-card">
+    <div class="run-top">
+      <div class="run-path"><span class="from">8.0.46</span><span class="arrow">→</span><span class="to">8.4.3</span></div>
+      <div class="run-meta">run6 · Complete · 26 min</div>
+    </div>
+    <div class="run-grid">
+      <div class="run-field"><div class="run-field-label">Blue/Green deployment</div><div class="run-field-val">bgd-m1s7sm3twuppauir</div></div>
+      <div class="run-field"><div class="run-field-label">Pre-upgrade snapshot</div><div class="run-field-val">rdsupgrade-fixture-mysql2-preupgrade-20261007115350</div></div>
+      <div class="run-field" style="grid-column:1/-1"><div class="run-field-label">Final endpoint</div><div class="run-field-val">rdsupgrade-fixture-mysql2.clda7d8uva7m.us-east-1.rds.amazonaws.com:3306</div></div>
+    </div>
+  </div>
+</section>
+
+<section class="wrap">
+  <div class="section-head"><span class="chapter-no">06</span><h2>What v1 deliberately doesn't do yet</h2></div>
+  <div class="roadmap">
+    <div class="road-item"><div class="road-check"></div><div class="road-text"><b>No approval gate before cutover.</b> Runs single-shot once triggered, same as the original manual script. A pause-for-human step before switchover is the main v2 item.</div></div>
+    <div class="road-item"><div class="road-check"></div><div class="road-text"><b>No live AWS picker.</b> Source instance and scope are typed in, not selected from a dropdown — the Add form needs a real scope picker first.</div></div>
+    <div class="road-item"><div class="road-check"></div><div class="road-text"><b>Doesn't auto-pick the target version.</b> By design: the exact target is always user-specified, never inferred as "latest," on a database this important.</div></div>
+  </div>
+</section>
+
+<section class="wrap">
+  <div class="section-head"><span class="chapter-no">07</span><h2>Anticipated questions</h2></div>
+  <div class="faq">
+    <details open>
+      <summary>Does this work for anything besides MySQL?</summary>
+      <div class="faq-answer">Yes — MySQL, MariaDB, PostgreSQL, Aurora MySQL, Aurora PostgreSQL. That's the exact engine list AWS itself supports for Blue/Green, not something narrowed to one customer.</div>
+    </details>
+    <details>
+      <summary>Does this compete with DuploCloud's native RDS Blue/Green feature?</summary>
+      <div class="faq-answer">No. The native path exists in the backend but is feature-flagged off and reachable only from inside the backend process itself. This extension closes that gap today using AWS's API directly.</div>
+    </details>
+    <details>
+      <summary>Is this customer-specific?</summary>
+      <div class="faq-answer">No hardcoded business logic — it works against any AWS account and scope with an eligible RDS instance.</div>
+    </details>
+    <details>
+      <summary>What happens if a step fails midway?</summary>
+      <div class="faq-answer">Fails fast and cleanly: the exact phase, AWS's own error message, and a full step-by-step history are all visible. A failed Blue/Green deployment is torn down automatically rather than left orphaned.</div>
+    </details>
+  </div>
+</section>
+
+<footer class="wrap">
+  <div class="foot-line">
+    <span>DuploCloud platform extension — typed resource, Agent-mode provisioning</span>
+    <span class="mono">rdsupgrade · v0.1.14</span>
+  </div>
+</footer>

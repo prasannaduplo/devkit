@@ -21,13 +21,9 @@
 
   <ItemGroup>
     <PackageReference Include="Duplocloud.AiHelpdesk.Sdk" Version="[$(DuploSdkVersion)]" ExcludeAssets="runtime" />
-    <!-- RDS Blue/Green calls + the IAM Deny guard against Duplo's own reconciler. The SDK's transitive
-         closure pins AWSSDK.Core to the 4.x line (via AWSSDK.CloudWatchLogs) — RDS/IdentityManagement must
-         be a version built against that same Core major, so float to the latest 4.x rather than an exact
-         3.7.x pin (which depends on Core 3.x and conflicts). Let NuGet pick AWSSDK.Core transitively —
-         pinning it ourselves just creates a downgrade conflict against whatever RDS/IdentityManagement need. -->
-    <PackageReference Include="AWSSDK.RDS" Version="4.*" />
-    <PackageReference Include="AWSSDK.IdentityManagement" Version="4.*" />
+    <!-- No AWS SDK packages: the RDS Blue/Green orchestration runs via AWS CLI inside the provisioning
+         ticket (skills/provision-rdsupgrade), not in-process C# — see RdsUpgrade.cs's header comment for
+         why this is Agent-mode rather than Worker-mode. -->
   </ItemGroup>
 
 </Project>

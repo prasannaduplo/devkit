@@ -2,11 +2,11 @@
   "manifestVersion": "1.0",
   "id": "duplo.examples.rdsupgrade",
   "name": "RDS Upgrade",
-  "version": "0.1.1",
+  "version": "0.1.14",
 
   "sdkVersion": "REPLACED_BY_SKILL_FROM_sdk-version_ENDPOINT",
   "backend": {
-    "assemblyDir": "duplo.examples.rdsupgrade/0.1.1/backend",
+    "assemblyDir": "duplo.examples.rdsupgrade/0.1.14/backend",
     "entryAssembly": "Duplo.Extension.RdsUpgrade.dll"
   },
 
@@ -22,6 +22,18 @@
       "resultType": "Duplo.Extension.RdsUpgrade.RdsUpgradeResult",
       "hooksType": "Duplo.Extension.RdsUpgrade.RdsUpgradeHooks",
       "serviceType": "Duplo.Extension.RdsUpgrade.RdsUpgradeService"
+    }
+  ],
+
+  "skills": [
+    { "folder": "duplo.examples.rdsupgrade/0.1.14/skills/provision-rdsupgrade", "isBuiltIn": true }
+  ],
+  "skillMappings": [
+    {
+      "originType": "RdsUpgrade",
+      "subType": "rds-upgrade",
+      "skillNames": ["provision-rdsupgrade"],
+      "timeout": { "provision": 3600, "deprovision": 600 }
     }
   ],
 

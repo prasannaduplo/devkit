@@ -165,6 +165,10 @@ export class AddRdsUpgradeComponent implements OnInit {
       targetInstanceClass: this.targetInstanceClass() || undefined,
       targetParameterGroupName: this.targetParameterGroupName() || undefined,
       switchoverTimeoutMinutes: this.switchoverTimeoutMinutes(),
+      // STOPGAP: no scope picker in v1 yet (EXTENSION_BACKLOG.md #36 follow-up) -- hardcoded to the
+      // aws-test21-admin scope on prasanna-ws for testing. Replace with a real scope picker before
+      // this is used against any other workspace/scope.
+      scopeIds: ['69b2aa5a675718845bfe87ce'],
     };
     const call = this.isEdit
       ? this.svc.update(this.id, spec)
