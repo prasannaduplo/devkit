@@ -1,0 +1,63 @@
+{
+  "manifestVersion": "1.0",
+  "id": "duplo.examples.networkstack",
+  "name": "Network Stack",
+  "version": "0.1.0",
+
+  "sdkVersion": "REPLACED_BY_SKILL_FROM_sdk-version_ENDPOINT",
+  "backend": {
+    "assemblyDir": "duplo.examples.networkstack/0.1.0/backend",
+    "entryAssembly": "Duplo.Extension.NetworkStack.dll"
+  },
+
+  "resources": [
+    {
+      "ticketOriginType": "NetworkStack",
+      "restSegment": "extensions/network-stacks",
+      "subType": "network-stack",
+      "archetype": "typed",
+      "registrar": "DevOpsResource",
+      "entityType": "Duplo.Extension.NetworkStack.NetworkStack",
+      "specType": "Duplo.Extension.NetworkStack.NetworkStackSpec",
+      "resultType": "Duplo.Extension.NetworkStack.NetworkStackResult",
+      "hooksType": "Duplo.Extension.NetworkStack.NetworkStackHooks",
+      "serviceType": "Duplo.Extension.NetworkStack.NetworkStackService"
+    }
+  ],
+
+  "skills": [
+    { "folder": "duplo.examples.networkstack/0.1.0/skills/provision-network-stack", "isBuiltIn": true }
+  ],
+  "skillMappings": [
+    { "originType": "NetworkStack", "subType": "network-stack", "skillNames": ["provision-network-stack"], "timeout": { "provision": 1800, "deprovision": 900 } }
+  ],
+
+  "frontend": {
+    "remote": {
+      "remoteName": "duploExtensionNetworkStack",
+      "remoteEntry": "/v1/aiservicedesk/extensions/duplo.examples.networkstack/fe/remoteEntry.json",
+      "exposedModule": "./Extension",
+      "type": "module"
+    },
+    "menus": [
+      {
+        "id": "duplo.examples.networkstack-devops",
+        "title": "DevOps",
+        "type": "collapsible-section",
+        "children": [
+          {
+            "id": "duplo.examples.networkstack-network-stack",
+            "title": "Network Stacks",
+            "type": "item",
+            "matIcon": "lan",
+            "relativeUrl": "extensions/network-stacks",
+            "order": 41
+          }
+        ]
+      }
+    ],
+    "routes": [
+      { "path": "extensions/network-stacks", "resourceType": "NetworkStack", "subType": "network-stack" }
+    ]
+  }
+}

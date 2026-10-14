@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Change the git owner of THIS dev-kit clone to YOUR own repo, so the checkout becomes yours.
 # Use it the first time you adopt the dev-kit (you cloned duplocloud/devkit and now want it
-# under your own remote). Your extensions live in ./extension/<name>/; the dev-kit framework rides along and is
+# under your own remote). Your extensions live in ./extensions/<name>/; the dev-kit framework rides along and is
 # upgradable later with ./scripts/upgrade_dev_kit.sh.
 #
 # Usage:
@@ -40,7 +40,7 @@ else
 fi
 
 echo "==> Done. This repo is now yours."
-echo "    • author extensions under extension/<name>/  (or run /duplo-extension in Claude Code)"
-echo "    • build:   ./scripts/build-extension.sh extension/<name>   (or ./scripts/build-all.sh)"
+echo "    • author extensions under extensions/<name>/  (or run /duplo-extension in Claude Code)"
+echo "    • build:   ./scripts/build-extension.sh extensions/<name>   (or ./scripts/build-all.sh)"
 echo "    • upgrade the framework later: ./scripts/upgrade_dev_kit.sh --version <branch|tag|commit>"
 echo "    • push:    git push -u origin main"

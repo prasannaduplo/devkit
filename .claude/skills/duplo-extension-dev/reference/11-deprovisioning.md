@@ -8,8 +8,7 @@ objects or leave undeletable rows.
 > **The default is DELETE, not retain.** For agent-based and passthrough resources the row is **hard-deleted
 > automatically** once teardown reaches `DeProvisioned` (`AutoDeleteOnDeProvision` defaults **`true`**). Worker
 > resources delete their own row at the end of the teardown tick. You only keep a row around if you deliberately
-> override `AutoDeleteOnDeProvision => false`. (An older doc/comment claiming agent-mode "retains by default" is
-> stale — trust this.)
+> override `AutoDeleteOnDeProvision => false`.
 
 ## REST surface
 | Call | Effect |
@@ -54,18 +53,34 @@ instead**, override in your service:
 protected override bool AutoDeleteOnDeProvision(Minio? e = null) => false;
 ```
 
+> The teardown message is **FORCE-sent**: it kills any in-flight agent turn and discards the pending queue,
+> and the resource is already `DeProvisioning` before the agent sees it — a mid-run watcher dies here, which
+> is exactly why run-locks/heartbeats matter (see samples/network-stack's tf-run.sh).
+>
 > ⚠️ **There is NO separate "deprovision skill" mapping.** The platform never auto-selects a distinct teardown
 > skill — it just sends the generic teardown message to the existing ticket. So **teardown must be reachable from
 > the skill(s) you already mapped for provisioning.** Two ways:
 > 1. **(preferred)** the provisioning skill also owns teardown — give its `SKILL.md` a **Deprovision** section that
->    reacts to the teardown message and a deterministic `deprovision.sh` that deletes exactly what `provision.sh`
->    created (idempotent — `--ignore-not-found`, safe to re-run). See
->    `samples/enrichment-pods/skills/provision-minio` (`provision.sh` + `deprovision.sh`).
+>    reacts to the teardown message and a deterministic teardown script that deletes exactly what provisioning
+>    created (idempotent, safe to re-run). See `samples/network-stack/skills/provision-network-stack`
+>    (its SKILL.md Deprovision section runs `terraform destroy` via the same `tf-run.sh`). A combined runner
+>    like that is an acceptable alternative to a separate `deprovision.sh` — either way the teardown must be
+>    idempotent and post `DeProvisioning → DeProvisioned`.
 > 2. add a **second skill** (e.g. `deprovision-<x>`) to the **same mapping's `skillNames` list**.
 >
 > If neither is done, the agent gets "tear down" with no deterministic way to do it and **your provisioned infra
 > orphans** while the row disappears. A provisioning skill that only creates is a bug for any resource that makes
 > real infra.
+
+**Frontend: the Delete action.** Ship a Delete row action (list) + a ⋮-menu item in the detail header (view) — worked in
+`samples/network-stack`'s `list-network-stack.component.ts` / `view-network-stack.component.ts`:
+status-aware branch (terminal + provisioned → `POST {id}/deprovision`; never-provisioned/failed with nothing
+created → hard `DELETE {id}`; in-flight → refuse with "wait for the current run"), confirmation via the lib's
+`DeleteConfirmationModalService.openGeneric(entityType, name, onconfirm, blockUI?, action?)` wrapped in
+try/catch with a `window.confirm` fallback (host modal services can throw inside a remote), and any failure
+surfaced in the page's error alert — never swallowed. ⚠️ The lib exports TWO `openGeneric`s with DIFFERENT
+argument orders: `DeleteConfirmationModalService` (entityType first, requires typing the entity name to
+confirm — the one the samples use) vs `ConfirmationModalService` (action first). Don't mix them up.
 
 ### Passthrough (single object, synchronous)
 `POST {id}/deprovision` → status `DeProvisioning` → your **`DeprovisionDirectAsync`** deletes the external object

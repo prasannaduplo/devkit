@@ -19,7 +19,7 @@ Throughout, `<devkit>` is a checkout of `duplo-ai-extension-devkit` and `<portal
 `duplo-ui/portal`. You need the dev-kit for the reference files and the gate script; you need the
 portal only for the gate's optional host-entry argument and the host-requirement check.
 
-> **Before you start, read the [host requirement](#host-requirement-read-this-before-you-debug-anything).**
+> **Before you start, read the [host requirement](#host-requirement--read-this-before-you-debug-anything).**
 > A perfectly migrated extension still hangs forever on a portal that predates the
 > `REMOTE_LoadRemoteModule` fix, with no error to point at. Confirm the portal first, or you will spend
 > hours debugging a correct extension.
@@ -336,8 +336,8 @@ Angular 19 flipped the default of `standalone` from `false` to `true` for `@Comp
 **and** `@Pipe`. An Angular 15 extension declares all of them in an NgModule, so every one needs the
 flag written out explicitly.
 
-**Count them; do not assume a number.** Helloworld has 7 components; across the dev-kit's nine samples
-the total is 67. A real extension will have its own number.
+**Count them; do not assume a number.** Helloworld has 7 components; other samples and real extensions each
+have their own number.
 
 ```bash
 grep -rnE "@(Component|Directive|Pipe)\(" "$FE/src" --include='*.ts' | wc -l
@@ -378,8 +378,6 @@ Unlike NG6008 this produces **no error at all**. The build passes, unit tests pa
 static shell — and then any field assigned from an async callback (`subscribe`, `setTimeout`, a promise)
 never repaints. A list sits empty forever while the network tab shows the data arrived. Do not trust a
 green build here; it is only visible at runtime.
-
-Every one of the dev-kit's nine samples shipped with this bug: 0 of 67 components set the property.
 
 Pick one of two fixes — do not leave the property absent while assigning plain fields:
 
@@ -439,7 +437,7 @@ node <devkit>/scripts/verify-remote-federation.js "$EXT" \
 
 Expect `OK: <dir> is a loadable Native Federation remote`.
 
-Across the dev-kit's nine samples, **no source change beyond `standalone: false` was required**. A
+Across the dev-kit's samples, **no source change beyond `standalone: false` was required**. A
 richer extension may still hit API drift in the jumped major versions — `@ng-bootstrap/ng-bootstrap`
 13→21, `@swimlane/ngx-datatable` 20→25, `@ngx-translate/core` 14→18, RxJS 6→7. Those surface as
 ordinary compile errors; fix them against each library's changelog.

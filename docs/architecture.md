@@ -9,15 +9,32 @@ Nothing here builds from source. Every service pulls a published image pinned by
 
 | Service | Image | Port | Role |
 | --- | --- | --- | --- |
-| `duplo-ai-studio` | `quay.io/duplocloud/duplo-ai-helpdesk-devkit` | 60031 | The platform API, serving `/v1/aiservicedesk`. Owns extensions, workspaces, resources, and tickets, and enforces the license in `Licensing__Token`. |
+| `duplo-ai-studio` | `quay.io/duplocloud/backend` | 60031 | The platform API, serving `/v1/aiservicedesk`. Owns extensions, workspaces, resources, and tickets, and enforces the license in `Licensing__Token`. |
 | `duplo-ui` | `quay.io/duplocloud/duplo-ai-helpdesk-ui` | 4210 | The Angular portal. The image serves the SPA only; the mounted `nginx/default.conf` proxies API prefixes to the studio, so the browser sees one origin and there is no CORS. |
 | `claude-code-agent` | `quay.io/duplocloud/duplo-agent` | 8010 | The LLM agent that executes provisioning tickets. Calls back to the studio at `http://duplo-ai-studio:60021`. |
-| `mongo` | `mongo:6.0` | 27018 | All platform state, including the `loaded_extensions` records. |
+| `dind` | `docker:27-dind` | — | Docker-in-Docker daemon for the agent, mirroring the helpdesk-helm chart's sidecar. Shares `claude-code-agent`'s network namespace and listens on its loopback only (`DOCKER_HOST=tcp://127.0.0.1:2375`), so the agent can run containers and nothing else can reach the daemon. Mounts the same `/data` so bind-mount paths match. Runs privileged. |
+| `mongo` | `mongo:7.0.14` | 27018 | All platform state, including the `loaded_extensions` records. Matches the version pinned in the helpdesk-helm chart. |
+| `qdrant` | `qdrant/qdrant:v1.18.2` | 6333 | The vector database behind the Knowledge Base. The studio reaches it in-network at `http://qdrant:6333`; the host port is published so its dashboard is available for debugging. Runs with RBAC on, so the studio can mint read-only per-collection tokens instead of sharing the master key. |
 | `xterm` | `quay.io/duplocloud/duplo-xterm` | 6061 | In-browser terminal. The browser reaches it on the published host port, so `AIStudio__XtermHost` must be host-reachable. |
 | `init-perms` | `busybox:1.36` | — | One-shot. Chowns the shared named volumes to uid 1001 so the non-root studio and agent can write them. Named volumes are created root-owned, so this runs on every startup. |
 
-Ports shown are the dev kit's `.env.example` defaults, offset from the platform's standard ports so this
-stack can run alongside a full local platform. See [configuration.md](configuration.md#host-ports).
+Ports shown are the dev kit's `.env.example` defaults, mostly offset from the platform's standard ports so
+this stack can run alongside a full local platform. See [configuration.md](configuration.md#host-ports).
+
+Qdrant is the one service the platform reaches only through its own records: the studio has no connection
+to it until a provider and a collection exist. `run.sh` therefore runs
+[`scripts/register-qdrant.sh`](cli-reference.md#platform-registration), which registers Qdrant as a
+`vectorDatabase` provider, wraps it in a `qdrant` scope so the provider is selectable in the ticket scope
+picker, and creates an empty `devkit-docs` collection owned by the `extension-dev` workspace. That
+collection's read access is *not* that scope — about a minute after it is created, the reconcile worker
+mints a read-only token scoped to the one collection, wraps it in a `kb-devkit-docs-readonly` scope, and
+attaches it to the owning workspace by itself.
+
+Ingesting documents into that collection is a separate matter, and needs AWS Bedrock. The embedding model
+the studio seeds is Bedrock's `cohere.embed-v4`, and the agent refuses every other provider, so uploading
+a document needs Bedrock credentials that can invoke it. The registration above runs unconditionally
+regardless: on the direct-Anthropic path the collection still provisions to Ready and can be browsed from
+the UI, but each upload fails. See [configuration.md](configuration.md#knowledge-base).
 
 ## Volumes
 
@@ -27,6 +44,7 @@ stack can run alongside a full local platform. See [configuration.md](configurat
 | `platform_data` | studio, agent | The shared `/data` file store — skills and loaded-extension skill files. Shared so the agent can read the skills the studio seeded. |
 | `extension_studio_data` | studio | Unpacked hot-loaded extension bundles. |
 | `claude_sessions` | agent | Agent sessions, under its real home (`/home/appuser/.claude`). |
+| `qdrant_data` | qdrant | Knowledge Base vectors and their payloads. |
 
 Because extensions live in a named volume **and** are recorded in Mongo, they survive a container
 recreate: `ExtensionReplayHostedService` re-registers the active records on boot. That is why

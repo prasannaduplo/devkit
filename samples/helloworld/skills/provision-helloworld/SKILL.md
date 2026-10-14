@@ -55,9 +55,9 @@ Or follow the steps yourself if you need to branch on the spec.
 ## Notes
 
 - **Status and results are two separate APIs** — never fold the result into a status payload
-  (see [reference/04-hooks.md](../../../../reference/04-hooks.md)).
+  (see [reference/04-hooks.md](../../../.claude/skills/duplo-extension-dev/reference/04-hooks.md)).
 - The result body IS the typed result object (`{ "fullName": … }`); the extension's FE remote renders
   `result.fullName`.
 - The backend C# (`backend/HelloWorld.cs`) defines the typed `spec`/`result` shape and provides the
   `…/status` + `…/results` endpoints via `ResourcesController`; this skill only fills them. See
-  [reference/01-architecture.md](../../../../reference/01-architecture.md) for the full loop.
+  [reference/01-architecture.md](../../../.claude/skills/duplo-extension-dev/reference/01-architecture.md) for the full loop.

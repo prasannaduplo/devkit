@@ -15,15 +15,24 @@ its tick. The worker is registered via an `IDuploExtension` (`AppStackExtension`
 | `AppStackWorker.WaitForDeletionAsync` | Return true once the Deployment is gone (worker re-ticks until then). |
 | `AppStackExtension : IDuploExtension` | `Configure` registers `AddHostedService<AppStackWorker>()`. |
 
-> **Note:** the worker only ticks if the platform's hot-load loader invokes `IDuploExtension.Configure` for
-> uploaded extensions. The base worker (`ResourceWorkerBase`) drives the tick loop, status transitions, and retries.
+> The hot-load loader starts the worker directly (it scans the assembly for `IHostedService`); `Configure`'s
+> `AddHostedService` is what the boot-time replay uses after a studio restart. The base worker
+> (`ResourceWorkerBase`) drives the tick loop, status transitions, and retries.
+
+## Frontend
+List (`Name | Namespace | Image | Replicas | Status`), a create/edit form (Name, Namespace, Image, Replicas —
+submit button says **"Create"**), and a Spec/Result view. Deliberately **no Track-Provisioning UI and no
+`ticketName()`** — worker mode creates no provisioning ticket (the `origin-context` lookup would always
+return 204); progress arrives via status/subStatus. Edits go through `PATCH {id}` with the FULL spec (spec
+is replaced wholesale), which re-triggers the worker's reconcile.
 
 ## Deprovision
-`DeprovisionAsync` → `DeprovisionInitiated`; the worker tick runs `DeleteSubResourcesAsync` + `WaitForDeletionAsync`
-→ `DeProvisioned`. Row retained (audit) by default. See `reference/11-deprovisioning.md`.
+`DeprovisionAsync` → `DeprovisionInitiated`; the worker tick runs `DeleteSubResourcesAsync` + `WaitForDeletionAsync`,
+then the worker hard-deletes the row itself. See `reference/11-deprovisioning.md`.
 
 ## Build
 ```bash
-DUPLO_BASE=http://localhost:60021 ./scripts/build-extension.sh  samples/worker-appstack
-DUPLO_BASE=http://localhost:60021 ./scripts/deploy-extension.sh samples/worker-appstack/dist/extension.zip
+# The scripts read the target platform from .env (scripts/_target.sh).
+./scripts/build-extension.sh  samples/worker-appstack
+./scripts/deploy-extension.sh samples/worker-appstack/dist/extension.zip
 ```

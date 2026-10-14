@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Backend for the Network Stack sample — compiled by the duplo-extension-dev skill with `dotnet publish`.
+    The build skill:
+      1. GET  {host}/v1/aiservicedesk/extensions/sdk-version  -> -p:DuploSdkVersion=<value>
+      2. GET  {host}/v1/aiservicedesk/extensions/sdk-bundle   -> unzip into ./sdk-packages
+      3. dotnet publish -c Release -o <dist>/backend  (restores SDK from ./sdk-packages via nuget.config)
+    The SDK is referenced compile-only (ExcludeAssets="runtime") and exact-pinned to the running host
+    version, so the extension ships only its own DLL + genuinely third-party deps and shares the host's
+    SDK type identity at load time (ExtensionLoadContext resolves SDK assemblies from the host).
+  -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseAppHost>false</UseAppHost>
+    <IsPackable>false</IsPackable>
+    <!-- Overridden by the build skill: -p:DuploSdkVersion=<value from sdk-version> -->
+    <DuploSdkVersion Condition="'$(DuploSdkVersion)' == ''">1.0.0</DuploSdkVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Duplocloud.AiHelpdesk.Sdk" Version="[$(DuploSdkVersion)]" ExcludeAssets="runtime" />
+    <!-- EnrichResultAsync's live-subnet read (DescribeSubnets). Compile-only: the host's SDK closure
+         already ships AWSSDK.EC2 (it backs AwsHostOperations — see reference/10-sdk-api.md gotchas),
+         so the extension must NOT bundle a second copy. -->
+    <PackageReference Include="AWSSDK.EC2" Version="4.0.116" ExcludeAssets="runtime" />
+  </ItemGroup>
+
+</Project>

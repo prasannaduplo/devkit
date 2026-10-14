@@ -42,7 +42,12 @@ too) and would turn a successful create into a 400. (`CreateUnderParentAsync` ex
 ```csharp
 // Reference: Duplo.Ai.DataManagement/.../Controllers/User/Resource/ChildResourceController.cs
 [ApiController]
-[Route("v1/aiservicedesk/user/data/workspaces/{workspaceId}/environment/hello-parents/{parentId}/hello-children")]
+[Route("v1/aiservicedesk/user/data/workspaces/{workspaceId}/environment/extensions/hello-parents/{parentId}/hello-children")]
+// Access node under the parent — see 18-access-control.md. The parent controller carries
+// Parent = typeof(Workspace), ParentIdProperty = "OwnerWorkspaceId". ParentIdProperty must be
+// explicit here: Spec.ParentId is not a convention path, and omitting it would bind this node to
+// the workspace via the OwnerWorkspaceId every entity carries.
+[AccessControl(Parent = typeof(HelloParent), ParentIdProperty = "Spec.ParentId")]
 public class HelloChildrenController : ChildResourceController<HelloChild, HelloParent, HelloChildSpec, HelloChildResult> {
     private readonly IEntityService<HelloParent> _parent;
     public HelloChildrenController(IEntityService<HelloChild> svc, IEntityService<HelloParent> parent,
@@ -66,11 +71,8 @@ public class HelloChildrenController : ChildResourceController<HelloChild, Hello
     }
 }
 ```
-> Gotcha — **bump `manifest.version` on EVERY backend code change.** A re-`load-bundle` of the SAME version does not
-> reliably pick up new code: the prior `AssemblyLoadContext` is only best-effort-unloaded (BSON serializers / MVC
-> caches pin it), and old MVC routes can linger (→ `AmbiguousMatchException`). A new version stages a fresh
-> `{id}/{version}/backend` dir and a fresh load context, so the new DLL actually runs. (Only frontend-asset / skill /
-> view-template changes are safe to reload at the same version. For backend, bump the version — or restart the studio.)
+> Route changes here are backend changes — **bump `manifest.version` before re-loading**, or old MVC routes linger
+> (→ `AmbiguousMatchException`): [06](06-registration.md#reloading-changed-code--bump-manifestversion).
 
 Nested route shape: `…/environment/<parentSeg>/{parentId}/<childSeg>`. The child's own `service` can resolve the
 parent's details by injecting `IEntityService<HelloParent>` — **both resources register into the same per-extension
@@ -79,8 +81,8 @@ DI container** (`ExtensionRegistrar.RegisterExtension` registers each resource's
 `GetExpandedSpecForAgentAsync` (e.g. to pass the parent's external id to the provisioning skill).
 
 **Cascade delete**: when the parent is deleted or de-provisioned, delete its children in the parent's entity hook
-(`OnPostDeleteAsync` / `OnPostUpdateAsync` guarded on `Status == DeProvisioned`) — same pattern the env-child
-resources use (see `.claude/skills/env-child-resource-provisioning/backend.md`).
+(`OnPostDeleteAsync` / `OnPostUpdateAsync` guarded on `Status == DeProvisioned`) — worked in
+`samples/parent-child`'s `HelloParentHooks`.
 
 ## Manifest: two resources + the `parent` link
 
@@ -96,7 +98,7 @@ resources use (see `.claude/skills/env-child-resource-provisioning/backend.md`).
     "hooksType": "…HelloParentHooks", "serviceType": "…HelloParentService"
   },
   {
-    "ticketOriginType": "HelloChild", "restSegment": "hello-children", "subType": "hello-child",
+    "ticketOriginType": "HelloChild", "restSegment": "hello-children", "subType": "hello-child",   // CHILD restSegment is BARE by design — the extensions/ namespacing comes from the parent route (00-naming carve-out)
     "archetype": "typed", "registrar": "DevOpsResource",
     "parent": {                                  // ← links child to parent (nested under it)
       "ticketOriginType": "HelloParent",
@@ -164,17 +166,67 @@ see [00-naming](00-naming.md)):
 `extension-route-registrar.ts` injects these under `suite/:tenantId` at runtime (no host rebuild). A child
 resolver recovers `:parentId` by walking `ActivatedRoute.params`.
 
+### Choosing `matIcon` — give the nav entry a real icon, not the template's placeholder
+The portal renders every menu node as `<mat-icon svgIcon="{{ item.matIcon }}">`, resolved against two SVG sprites
+it registers at startup (`app.component.ts` → `addSvgIconSet`):
+
+- **`assets/images/icons/mdi.svg`** — a ~900-icon **SUBSET** of Material Design Icons, not the full 7k set.
+- **`assets/images/icons/duplo.svg`** — the DuploCloud brand icons: `duplo-admin`, `duplo-ai`, `duplo-cicd`,
+  `duplo-compliance`, `duplo-containers`, `duplo-cost`, `duplo-devops`, `duplo-docker`, `duplo-es`, `duplo-git`,
+  `duplo-logo`, `duplo-region`, `duplo-s3`, `duplo-security`, `duplo-services`, `duplo-settings`, `duplo-tags`,
+  `duplo-vnet`, `ai-service-desk`.
+
+A name that is in neither sprite renders as an **empty box** — silently, with no build or console error. MDI names
+are kebab-case (`shield-check`); **Material Symbols names with underscores (`waving_hand`, `account_tree`) and
+plain words that only exist in Material Icons (`settings`, `calculate`) are NOT in the sprite** and render blank.
+
+**Pick from what the extension IS.** Choose the closest match to the resource's purpose — a security scanner gets a
+shield, a build runner gets a branch. Do not leave the `helloworld` template's placeholder `star-outline`, and do not
+fall back to a generic `cog` when the requirement clearly names a domain. These are all verified present in the sprite:
+
+| The extension is about… | `matIcon` |
+|---|---|
+| security, policy, guardrails, compliance | `shield-check` · `duplo-security` · `duplo-compliance` |
+| secrets, credentials, keys, certs | `key-outline` · `shield-key-outline` · `lock-outline` |
+| CI/CD, builds, pipelines, jobs | `source-branch` · `duplo-cicd` · `rocket` |
+| git / source repos | `git` · `github` · `duplo-git` |
+| networking, VPC, DNS, load balancers | `lan` · `network-outline` · `duplo-vnet` |
+| servers, VMs, hosts, compute | `server` |
+| Kubernetes, containers, images | `kubernetes` · `docker` · `duplo-containers` |
+| cloud providers | `aws` · `microsoft-azure` · `google-cloud` · `cloud-outline` |
+| storage, buckets, files | `duplo-s3` · `folder-outline` · `file-document-outline` |
+| databases, data stores | `database` |
+| cost, billing, budgets | `duplo-cost` · `cash` · `currency-usd` |
+| metrics, reports, dashboards | `chart-line` · `view-dashboard` |
+| logs, search, observability | `magnify` · `console` · `duplo-es` |
+| alerts, notifications, incidents | `bell-outline` · `alert-outline` |
+| users, teams, access | `account-group` |
+| infrastructure-as-code, stacks | `terraform` · `layers` · `state-machine` |
+| APIs, web services, endpoints | `web` |
+| sync / reconcile / drift | `sync` |
+| generic lists, inventories, catalogs | `format-list-bulleted` · `table-large` · `package-variant` |
+| nothing above fits | `cog` · `puzzle` |
+
+Both the top-level `collapsible-section` and each `item` leaf take a `matIcon` — give the section the broad
+domain icon and each leaf the specific one (e.g. section `duplo-security`, leaves `shield-check` and `magnify`).
+
+**Verify a name you are unsure about** against the sprite the target platform actually serves (the portal, not the
+studio API — `UI_PORT` locally):
+```bash
+curl -fsS http://localhost:${UI_PORT:-4210}/assets/images/icons/mdi.svg | grep -c 'id="shield-check"'   # 1 = present, 0 = blank box
+curl -fsS http://localhost:${UI_PORT:-4210}/assets/images/icons/duplo.svg | grep -o 'id="[a-z0-9-]*"'   # the brand set
+```
+
 ### Pattern B — child inside the parent's detail view (tightly-coupled children)
 Don't give the child its own menu entry. Instead, the parent's **view** component renders a tab of its children
-with row links into the nested child route. Build the parent view from the platform UI library
-(`@duplocloud-internal/ng-common-lib`): `view-with-sidecards` + `view-header-card` + an `ngbNav`, and render the
-children tab with a `<searchable-datatable [rows]="children" (filter)="filterUpdate()">` whose row click routes to
+with row links into the nested child route. Build the parent view on the Template-G detail shell
+([19-detail-page](19-detail-page.md)) with a `Children` tab in the main card's Result strip, and render that tab
+with a `<searchable-datatable [rows]="children" (filter)="filterUpdate()">` whose row click routes to
 `extensions/hello-parents/:parentId/hello-children/:childId` (see
-[02-authoring-guide](02-authoring-guide.md#frontend-optional-but-recommended)). Wire the child tab's search box with
+[02-authoring-guide](02-authoring-guide.md#frontend)). Wire the child tab's search box with
 the same `filterUpdate()` + `FilterTableUtils.searchByFields` pattern as the List view (a bare `[rows]` makes the box
-inert); the parent-view refresh already re-loads children on workspace switch. This mirrors the env-child
-resources (Namespace → ConfigMaps as a tab; `.claude/skills/env-child-resource-provisioning/frontend.md`).
-Cleaner breadcrumb, child never appears "loose" in the nav.
+inert). This is how the platform surfaces a Namespace's ConfigMaps. Cleaner breadcrumb, child never appears
+"loose" in the nav.
 
 **When to use which:** independent/often-browsed children → **A** (nested menu). Children that only make sense in
 the parent's context (a build under a job, a config under a namespace) → **B** (tab in parent view). You can do
@@ -190,19 +242,10 @@ The second remote aliases to the first, and clicking the second extension loads 
 ("first-loaded wins"). Set it once, per extension:
 
 ```js
-// frontend/federation.config.js
-const { withNativeFederation, share, NG_SKIP_LIST } =
-  require('@angular-architects/native-federation/config');
-
-const REMOTE_NAME = 'duploExtensionMyThing';           // ← unique per extension; change ONLY this
-module.exports = withNativeFederation({
-  name: REMOTE_NAME,                                   // must be globally unique
-  exposes: { './Extension': './src/app/extension.routes.ts' },
-  shared: { ...share({ /* a SUBSET of duplo-ui/portal/federation.shared.js — see 02-authoring-guide */ }) },
-  skip: [...NG_SKIP_LIST, /\/schematics(\/|$)/, '@ngbracket/ngx-layout/server'],
-});
+// frontend/federation.config.js — the ONE line to change per extension
+const REMOTE_NAME = 'duploExtensionMyThing';           // must be globally unique
 ```
-(The full `shared` block, and why it is a subset rather than a mirror, is in
+(The rest of the file — the `shared` subset and the `skip` list — is in
 [02-authoring-guide](02-authoring-guide.md#native-federation-sharing--share-the-libs-di-peer-packages-avoids-nullinjectorerror).)
 
 Keep the manifest's `frontend.remote.remoteName` equal to `REMOTE_NAME`. **`build-extension.sh` does not check
@@ -217,12 +260,19 @@ repo, so global uniqueness stays your responsibility, not the tooling's.
 ## Checklist
 - [ ] Child spec extends `ParentRefSpec<TParent>`; child controller extends `ChildResourceController<>`, OVERRIDES
       `Create` (stamps `parentId`, creates via `Service.CreateAsync`, returns 201 — see top of this doc).
+- [ ] Both controllers carry access-node declarations ([18-access-control](18-access-control.md)): parent
+      `[AccessControl(Parent = typeof(Workspace), ParentIdProperty = "OwnerWorkspaceId")]`, child
+      `[AccessControl(Parent = typeof(<Parent>), ParentIdProperty = "Spec.ParentId")]`. Declaring only the
+      child fails the load — the parent entity must be declared as a node by some controller.
 - [ ] Unique `REMOTE_NAME` → federation `name` == manifest `frontend.remote.remoteName` (multi-extension safety).
 - [ ] Nested menu = TOP-LEVEL `collapsible-section` with `item` children (not a merged `collapsible`).
+- [ ] Every menu node's `matIcon` is chosen from the extension's purpose and exists in the portal's sprite
+      (see [Choosing `matIcon`](#choosing-maticon--give-the-nav-entry-a-real-icon-not-the-templates-placeholder)) — the
+      template's `star-outline` is a placeholder, and a name absent from the sprite renders blank.
 - [ ] Manifest has two `resources[]`; the child carries the `parent` block.
 - [ ] Parent hook cascades delete to children.
-- [ ] FE: nested `menu.node.children[]` (Pattern A) and/or a child table in the parent view (Pattern B); nested
-      `routes[]` with `:parentId`.
+- [ ] FE: a `frontend.menus[]` tree with `item` children (Pattern A) and/or a child table in the parent view
+      (Pattern B); nested `routes[]` with `:parentId`.
 
 See also: [03-base-classes](03-base-classes.md), [04-hooks](04-hooks.md),
 [07-scope-credentials](07-scope-credentials.md) (if the child provisions against an external system).

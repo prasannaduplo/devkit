@@ -8,8 +8,9 @@ reconcile "provisioning" — it does **not** require Kubernetes or any scope.
 - The service maps **no** skill and returns `ProvisioningMode.Worker` from `NoSkillsFallbackMode`, so create/update
   route to the background `CalculatorWorker` (a `ResourceWorkerBase`) instead of the agent or a synchronous
   passthrough.
-- The worker is registered via `IDuploExtension.Configure` → `AddHostedService<CalculatorWorker>()`. The studio
-  starts hot-loaded hosted services automatically (no host restart).
+- The worker is registered via `IDuploExtension.Configure` → `AddHostedService<CalculatorWorker>()` for the
+  boot-time replay; on hot-load the loader starts it directly by scanning the assembly for `IHostedService`
+  (reference/10-sdk-api.md, Gotchas).
 - `ApplyAsync` receives a **mutable** entity: it sets `entity.Result.Sum/Product` then calls
   `await SaveProgressAsync(scope, entity, "...", ct)` to persist the result. The base re-persists `Result` and
   flips `Status → Complete` on terminal success.
@@ -35,6 +36,7 @@ Worker path: status → `DeprovisionInitiated`; the worker's `DeleteSubResources
 
 ## Build
 ```bash
-DUPLO_BASE=http://localhost:60021 ./scripts/build-extension.sh  samples/worker-compute
-DUPLO_BASE=http://localhost:60021 ./scripts/deploy-extension.sh samples/worker-compute/dist/extension.zip
+# The scripts read the target platform from .env (scripts/_target.sh).
+./scripts/build-extension.sh  samples/worker-compute
+./scripts/deploy-extension.sh samples/worker-compute/dist/extension.zip
 ```

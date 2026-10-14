@@ -12,9 +12,12 @@ built-in resource (Namespace, NetworkBaseline).
 backend/    typed C# — Spec/Result/Resource/Hooks/Service (SDK base classes) + ResourcesController
 frontend/   Angular 22 Native-Federation remote (list/add/view) using the platform UI lib @duplocloud-internal/ng-common-lib
 skills/     provision-helloworld — reads firstName+lastName, writes fullName back as the result
-resources-frontend-templates/  declarative Result view-template (see reference/09-result-templates.md)
 manifest.json  ties it together: backend block + typed resource + skill + frontend remote/menu/route
 ```
+
+The detail page is the platform's detail shell (reference/19-detail-page.md): a card-less header, a Spec | Result
+switcher, the main card, and a lifecycle rail whose phase timeline is derived from the resource's status + result.
+The Result content is hand-written (reference/17-custom-result-views.md).
 
 The example resource takes `firstName` + `lastName` and produces `fullName`, persisted in its own
 `extension_helloworlds` collection and served at `…/environment/extensions/helloworlds`.
@@ -29,8 +32,8 @@ The example resource takes `firstName` + `lastName` and produces `fullName`, per
   object.
 - A per-extension Native-Federation remote that shares the host's Angular 22 / RxJS singletons, reaches
   host services via the `REMOTE_DuploHttpClient` + `REMOTE_UserSession` string DI tokens, and builds its
-  UI from the platform library `@duplocloud-internal/ng-common-lib` (searchable-datatable, forms,
-  view-with-sidecards, and the declarative result renderer) so it looks native.
+  UI from the platform library `@duplocloud-internal/ng-common-lib` (searchable-datatable, forms, ngbNav) plus
+  the detail shell in `frontend/src/app/shared/`, so it looks native.
 
 ## Build + package + load
 
@@ -53,20 +56,19 @@ unzip -o /tmp/sdk.zip -d backend/sdk-packages
 #    The build writes frontend/dist/remoteEntry.json + sibling ESM chunks (no dist/browser/, no index.html).
 ( cd frontend && npm install && npm run build )
 
-# 4. Assemble the bundle: manifest.json + backend/ (your DLL only) + fe/ + skills/ + templates, then zip
+# 4. Assemble the bundle: manifest.json + backend/ (your DLL only) + fe/ + skills/, then zip
 rm -rf pkg; mkdir -p pkg/backend pkg/fe pkg/skills
 cp manifest.json pkg/ ; cp dist/backend/Duplo.Extension.*.dll pkg/backend/ ; cp -r frontend/dist/* pkg/fe/ ; cp -r skills/* pkg/skills/
-[ -d resources-frontend-templates ] && cp -r resources-frontend-templates pkg/resources-frontend-templates
 rm -f extension.zip   # zip updates in place — drop the stale archive first so the bundle shrinks
 ( cd pkg && zip -r ../extension.zip . )
 
 # 5. Upload the bundle — the studio unpacks + hot-loads the DLL
-curl -fsS -X POST "$DUPLO_BASE/v1/aiservicedesk/user/data/workspaces/$WS/environment/extensions/$ID/load-bundle" \
+curl -fsS -X POST "$DUPLO_BASE/v1/aiservicedesk/user/data/workspaces/$WS/environment/extension-studio/$ID/load-bundle" \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/zip" --data-binary @extension.zip
 ```
 
-See the skill entry point `../../SKILL.md` for the full build+load flow (in-platform and local), and the
-framework docs in `../../reference/` — `01-architecture.md`, `02-authoring-guide.md`, `03-base-classes.md`,
+See the skill entry point `../../.claude/skills/duplo-extension-dev/SKILL.md` for the full build+load
+flow (in-platform and local), and the framework docs in `../../.claude/skills/duplo-extension-dev/reference/` — `01-architecture.md`, `02-authoring-guide.md`, `03-base-classes.md`,
 `04-hooks.md`, `05-custom-actions.md`, `06-registration.md`.
 
 ## Load the frontend into a local portal without uploading a bundle
@@ -89,5 +91,5 @@ against the API host). Run the portal (`npm run run:all`) and open **AI Suite �
 Rename `HelloWorld*` → your resource across `backend/` (classes, `[BsonCollection]`, controller
 `[Route]`, `GetTicketOriginType`/`SubType`), edit the spec/result fields, update the FE service
 (`SUB_TYPE`, REST segment, origin-context `type=`), the skill, and `manifest.json` (ids, type names,
-`backend.entryAssembly`, originType/subType, restSegment, menu, route). Keep `archetype: "typed"` (NOT
-`skill-based`) so the loader takes the DLL path. Future archetype templates will live beside this one.
+`backend.entryAssembly`, originType/subType, restSegment, menu, route). Keep `archetype: "typed"` so the loader
+takes the DLL path.

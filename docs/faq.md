@@ -108,23 +108,19 @@ The stack runs entirely on your machine. Three things leave it:
 
 - **Your LLM provider.** The agent sends prompts to Anthropic, Azure, or Bedrock using the key **you**
   supply, under that provider's terms.
-- **Usage metrics**, unless you opt out — see the next question and [PRIVACY.md](../PRIVACY.md).
+- **Usage metrics**, if you opt in inside the UI — see the next question and [PRIVACY.md](../PRIVACY.md).
 - **Image pulls** from `quay.io`.
 
 Your tickets, extensions, and platform data stay in your local Mongo and file store.
 
-### What is collected, and how do I opt out?
+### What is collected?
 
-The portal sends product usage metrics to DuploCloud via Mixpanel. It is **not anonymous** — the metrics
-are tied to the email you sign in with, along with your username, roles, and email domain. What is sent is
-which features you used and the *names* of objects you created, not their contents.
-[PRIVACY.md](../PRIVACY.md) enumerates every event and property.
+The portal sends product usage metrics to DuploCloud via Mixpanel **only if you opt in inside the UI**. It
+is **not anonymous** — the metrics are tied to the email you sign in with, along with your username, roles,
+and email domain. What is sent is which features you used and the *names* of objects you created, not
+their contents. [PRIVACY.md](../PRIVACY.md) enumerates every event and property.
 
-`./run.sh` asks on first run, defaulting to opted in. To opt out at install use `./run.sh --no-metrics`;
-afterwards set `DUPLO_USAGE_METRICS=0` in `.env`, re-run `./run.sh`, and reload any open UI tab.
-
-The opt-out is enforced by the proxy rather than trusted to the UI — opted out, the Mixpanel key never
-reaches your browser. See [configuration.md](configuration.md#usage-metrics).
+The dev kit itself has no metrics prompt or setting; the consent lives in the product UI.
 
 ### What happens when my trial expires?
 

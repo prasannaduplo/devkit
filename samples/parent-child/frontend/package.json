@@ -1,7 +1,7 @@
 {
   "name": "duplo-extension-parentchild-remote",
   "version": "0.1.0",
-  "description": "Parent/Child extension sample — Angular Module-Federation remote (parent list/view + child add/view).",
+  "description": "Parent/Child extension sample — Angular Native Federation remote (parent list/view + child add/view).",
   "scripts": {
     "build": "ng build --configuration production"
   },
@@ -16,7 +16,7 @@
     "@hono/node-server": "^2.0.5"
   },
   "dependencies": {
-    "@angular-architects/native-federation": "^22.0.6",
+    "@angular-architects/native-federation": "22.0.6",
     "@angular/cdk": "^22.1.0",
     "@angular/common": "^22.1.0",
     "@angular/compiler": "^22.1.0",
@@ -25,7 +25,7 @@
     "@angular/material": "^22.1.0",
     "@angular/platform-browser": "^22.1.0",
     "@angular/router": "^22.1.0",
-    "@duplocloud-internal/ng-common-lib": "file:../../../packages/duplocloud-internal-ng-common-lib-0.2.0.tgz",
+    "@duplocloud-internal/ng-common-lib": "file:../../../packages/duplocloud-internal-ng-common-lib-0.3.0.tgz",
     "@ng-bootstrap/ng-bootstrap": "^21.0.0",
     "@ng-select/ng-select": "^23.5.1",
     "@ngbracket/ngx-layout": "^22.0.1",
@@ -40,7 +40,7 @@
     "monaco-editor": "^0.55.1",
     "ngx-echarts": "^22.0.0",
     "ngx-markdown": "^22.0.0",
-    "ngx-monaco-editor-v2": "^22.0.4",
+    "ngx-monaco-editor-v2": "22.0.4",
     "ngx-toastr": "^20.0.5",
     "rxjs": "^7.8.0",
     "tslib": "^2.6.0",

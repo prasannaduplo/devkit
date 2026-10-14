@@ -33,9 +33,6 @@ Flags:
 | `--version <ref>` | Branch, tag, or commit to move to. Default `main`. |
 | `--yes`, `-y` | Skip the interactive confirmation, for scripted or CI use. |
 
-> **Note:** the acquisition model is under active change. If you adopted the kit with `init-project.sh`,
-> the flow above is current.
-
 ## How defaults are adopted
 
 Framework-shipped defaults — the image tags and `STUDIO_PLATFORM` — live in
@@ -70,6 +67,31 @@ Pass `--studio-tag`, `--ui-tag`, or `--agent-tag`, or hand-edit `.env`. Either w
 
 Delete its line from `.env` — or from `.env.defaults` — and re-run `./run.sh`. It resumes tracking the
 framework default.
+
+## Opting in to access control on existing extensions
+
+Newer platforms authorize resources through hierarchical permission sets. Joining that model is
+**opt-in per resource**: a controller with no declaration keeps its current behavior (any workspace
+member can CRUD the resource, and it never appears in the permission-set editor). The samples and
+the scaffold now declare their nodes, so newly-created extensions opt in by default —
+`[AccessControl(Parent = typeof(Workspace), ParentIdProperty = "OwnerWorkspaceId")]` on top-level
+resources, `[AccessControl(Parent = typeof(<ParentEntity>), ParentIdProperty = "Spec.ParentId")]`
+on children (see `.claude/skills/duplo-extension-dev/reference/18-access-control.md`).
+
+An upgrade never edits your code under `extensions/`, so an existing extension does **not** gain the
+declaration automatically, and nothing forces it. To opt in: add the attribute (plus
+`using Duplo.Ai.DataManagement.AccessControl;` / `using Duplo.Ai.Model;`), bump `manifest.version`,
+rebuild, and reload.
+
+Two things to know before reloading in a shared environment:
+
+- The attribute compiles only against a host whose SDK ships the access-control types; on an older
+  host the build fails with `CS0246: AccessControl not found` — upgrade the host first. Check what
+  yours serves with `GET /v1/aiservicedesk/extensions/sdk-bundle`.
+- Opting in is a behavior change for non-admin users: permission sets with a broad workspace grant
+  (ALL verbs, "applies to whole subtree" — including every set migrated from the legacy model) keep
+  working with no admin action, but users with narrow grants need the new node (and any named
+  actions) granted before they can reach the resource again.
 
 ## Upgrading the vendored UI library
 

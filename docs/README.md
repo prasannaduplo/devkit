@@ -17,12 +17,13 @@ reader takes.
 
 ## Writing extensions
 
-The authoring manual is the 16 numbered guides in
+The authoring manual is the 20 numbered guides in
 [`.claude/skills/duplo-extension-dev/reference/`](../.claude/skills/duplo-extension-dev/reference) —
-architecture, base classes, hooks, custom actions, registration, scope credentials, parent/child menus,
-result templates, the SDK API, deprovisioning, enrichment and live state, current user, forms and wizards,
-and error handling. They are the source of truth, and the `/duplo-extension` authoring command reads them
-directly.
+naming, architecture, the authoring path, base classes, hooks, custom actions, registration, scope
+credentials, parent/child and menus, the SDK API, deprovisioning, enrichment and live state, current user,
+forms and wizards, error handling, opt-in Ask AI sessions, the hand-written result content, access control,
+and the detail-page shell. They are the source of truth, and the `/duplo-extension` authoring command reads
+them directly.
 
 Worked examples live in [`samples/`](../samples) — start with
 [`samples/helloworld`](../samples/helloworld), the reference sample.
@@ -35,7 +36,7 @@ Worked examples live in [`samples/`](../samples) — start with
 | [NOTICE](../NOTICE) | The boundary: what Apache-2.0 covers and what it does not |
 | [TERMS.md](../TERMS.md) | The proprietary container images and vendored library — local development only |
 | [SECURITY.md](../SECURITY.md) | Reporting a vulnerability |
-| [PRIVACY.md](../PRIVACY.md) | The usage metrics the UI sends, what is collected, and how to opt out |
+| [PRIVACY.md](../PRIVACY.md) | The usage metrics the UI sends if you opt in, and what is collected |
 | [CONTRIBUTING.md](../CONTRIBUTING.md) | Framework PRs welcome; your extensions stay in your repo |
 | [CODE_OF_CONDUCT.md](../CODE_OF_CONDUCT.md) | Contributor Covenant 2.1 — expected behaviour in issues and PRs |
 | [SUPPORT.md](../SUPPORT.md) | Where to get help and what to expect: GitHub Issues, best effort, no SLA |

@@ -49,7 +49,7 @@
             "id": "duplo.examples.helloworld-hello-world",
             "title": "Hello World",
             "type": "item",
-            "matIcon": "hand-wave",
+            "matIcon": "waving_hand",
             "relativeUrl": "extensions/helloworlds",
             "order": 40
           }

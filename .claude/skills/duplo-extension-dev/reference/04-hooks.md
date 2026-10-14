@@ -27,7 +27,7 @@ provisioning** → service seams. Most extensions override nothing and rely on t
 
 ### `DefaultEntityHooks<T>` — the base you usually extend
 All methods are `virtual` no-ops **except**: `OnPreCreateAsync` and `OnPreUpdateAsync` call
-`entity.CleanupBeforeSave()`. If you override these two, call `base` first. A extension whose entity needs
+`entity.CleanupBeforeSave()`. If you override these two, call `base` first. An extension whose entity needs
 no invariants can use `DefaultEntityHooks<MyResource>` directly.
 
 ### `ResourceHooksBase<TResource,TSpec,TResult>` — invariants for resources
@@ -74,7 +74,9 @@ entity `OnPreUpdateAsync` (invariants) → DB update → *(if Passthrough + spec
 if (string.IsNullOrEmpty(updatedEntity.TicketContext?.TicketId))   // → first-time provisioning
     InitiateResourceProvisioningAsync(...)                          //   = a NEW ticket
 else if (HasSpecChanged(...))                                       // → reuse the SAME ticket
-    NotifySpecChangeAsync(...)   // re-materializes shared/<subtype>.json + force-sends a "spec updated" msg
+    NotifySpecChangeAsync(...)   // re-materializes shared/<subtype>.json + sends a "spec updated" msg
+                                 // (force-send is CALLER-decided via ForceSendOnSpecChange(); forced sends
+                                 //  interrupt the in-flight turn, queued sends wait behind it)
 ```
 So a normal spec edit on an already-provisioned resource **reuses its one ticket** — as long as
 `TicketContext.TicketId` survives the update.
@@ -85,7 +87,10 @@ so `OnAfterUpdateAsync` sees an empty ticket id and **spawns a brand-new ticket 
 makes prior plan/apply logs "disappear", because run history is read from the ticket workdir keyed by
 `TicketContext.TicketId` (see [05-custom-actions §7](05-custom-actions.md)). **`PATCH {id}`** instead *merges*
 onto the DB entity — it overwrites only the fields present in the body and never touches
-`TicketContext`/`Status`/`Result`. **Rule: edit forms must call `PATCH /{id}` with `{ spec }`, not `PUT`.**
+`TicketContext`/`Status`. Two refinements: PATCH **does** copy `Result` when the body carries one (never echo
+`result` back), and `spec` is replaced **WHOLESALE** (no deep merge) — a partial `{spec:{a:1}}` silently drops
+every sibling spec field, so edit forms must always send the FULL spec.
+**Rule: edit forms must call `PATCH /{id}` with the full `{ spec }`, not `PUT`.**
 (An action endpoint that loads the full entity, mutates one field, and calls `UpdateAsync` is also safe — the
 entity it passes still carries `TicketContext`.)
 
@@ -110,7 +115,7 @@ entity `OnPreDeleteAsync` (status/Import gate via `ResourceHooksBase`) → DB de
 
 ### Status / Result write-back (the agent's two APIs)
 - `POST {id}/status` → `UpdateStatusAsync` → persists → `OnAfterStatusUpdateAsync` (react to transitions;
-  e.g. a Extension resource unloads its DLL on `DeProvisioned`).
+  e.g. an Extension resource unloads its DLL on `DeProvisioned`).
 - `POST {id}/results` → `UpdateResultAsync` → persists → `OnAfterResultUpdateAsync` (e.g. auto-create a
   dependent resource).
 - **Status and results are separate APIs — never fold the result into a status payload.**
@@ -159,7 +164,7 @@ All are `protected virtual` unless noted. Signatures: [10-sdk-api](10-sdk-api.md
 |---|---|---|---|
 | `ValidateSpecAsync` | before persist | spec/scope required-field checks | all |
 | `ResolveAndValidateExternalAsync` | before persist | validate against external system | any |
-| `IsProvisioningNeeded` | create/update | return `false` → complete, no ticket | no-provision |
+| `IsProvisioningNeeded` | create/update | return `false` → complete, no provisioning ticket | no-provision |
 | `NoSkillsFallbackMode` | mode decision | return `Worker` (else passthrough) | worker |
 | `GetExpandedSpecForAgentAsync` | ticket creation | customize the spec JSON given to the agent | agent |
 | `ProvisionDirectAsync` / `UpdateDirectAsync` / `DeprovisionDirectAsync` | create/update/delete | synchronous external apply | passthrough |
@@ -169,10 +174,28 @@ All are `protected virtual` unless noted. Signatures: [10-sdk-api](10-sdk-api.md
 | `AutoDeleteOnDeProvision` | reached `DeProvisioned` | retain vs hard-delete row | all |
 | `DetectDriftAsync` | periodic (Complete) | CFN/desired-vs-actual drift | agent/CFN |
 
+**No-provision — the complete wiring** (no dedicated sample; it is genuinely one override):
+```csharp
+protected override bool IsProvisioningNeeded(MyThing entity) => false;
+```
+Create then persists the row and completes immediately: status `Complete`, **no ticket**, no scope
+validation, no skill/`skillMappings`. Typical uses: observe-only resources (pair with `EnrichResultAsync` —
+see [12-enrichment-and-live-state](12-enrichment-and-live-state.md)) and form-only resources whose create
+just records the spec. Delete is a plain CRUD delete (no deprovision ticket — see
+[11-deprovisioning](11-deprovisioning.md)).
+
 **Worker (`ResourceWorkerBase<…>`, worker mode only):** `ApplyAsync` (abstract — apply in dependency order),
 `VerifyDriftAsync` (abstract), `DeleteSubResourcesAsync` (abstract — reverse order), `WaitForDeletionAsync`
 (abstract — poll until gone), `EnrichSpecAsync`, `ShouldWaitForParentCascadeAsync`, `IsTerminalFailure`, + tuning
-(`DefaultTickInterval`, `MaxRowsPerTick`, `DriftCadence`, `TerminalRetryThreshold`).
+(`DefaultTickInterval`, `MaxRowsPerTick`, `DriftCadence`, `TerminalRetryThreshold`). Register it with
+`AddHostedService` in `IDuploExtension.Configure`; how the loader starts it on hot-load vs boot replay is in
+[10-sdk-api](10-sdk-api.md#gotchas).
+
+The base also gives you two `protected readonly` fields — use them, don't invent your own:
+`Logger` (an `ILogger`, so `Logger.LogWarning(...)` IS valid on a worker) and `ScopeFactory`
+(an `IServiceScopeFactory`; per-tick services arrive as the `IServiceProvider scope` parameter anyway).
+Helpers: `SaveProgressAsync` and `PatchEntityAsync` (both `protected static`). These are the complete
+extension-facing surface — a member not listed here or in [10-sdk-api](10-sdk-api.md) doesn't exist.
 
 ### How a worker persists `Result` — `SaveProgressAsync`
 `ApplyAsync` receives a **mutable** entity. To record outputs, set fields on `entity.Result` and call

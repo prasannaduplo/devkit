@@ -50,7 +50,9 @@ import { HelloService } from '../hello.service';
                   <input type="text" class="form-control" name="name"
                          [ngModel]="name()" (ngModelChange)="name.set($event)" [readonly]="isEdit"
                          placeholder="e.g. greet-jane" required validation-state validation-errors
-                         minlength="2" maxlength="60" pattern="^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?$" />
+                         minlength="2" maxlength="60" pattern="^[a-zA-Z0-9]([a-zA-Z0-9\\-]*[a-zA-Z0-9])?$" />
+                  <!-- Keep the hyphen ESCAPED: browsers compile "pattern" with the RegExp v flag, under
+                       which a bare hyphen inside a class throws — the validator fails open (any name passes). -->
                 </form-field>
                 <form-field>
                   <label class="element-label">First Name *</label>
@@ -104,6 +106,8 @@ export class AddHelloComponent implements OnInit {
 
   protected readonly isEdit = this.route.snapshot.data['action'] === 'Edit';
   private readonly id: string = this.route.snapshot.params['id'];
+  /** Full spec as loaded in edit mode — spread into the PATCH body (spec is replaced wholesale). */
+  private loadedSpec: Record<string, any> = {};
 
   // The platform's error reporter: the `form-group-errors` directive (already on the <form> for client-side
   // validation) also implements ErrorReporter. reportError(err) unwraps the API error via extractErrorMessage
@@ -118,6 +122,9 @@ export class AddHelloComponent implements OnInit {
     this.loading.set(true);
     this.svc.get(this.id).subscribe({
       next: item => {
+        // Keep the WHOLE loaded spec: PATCH {spec} replaces the spec wholesale, so any field this form
+        // doesn't edit must be spread back on save or it is silently erased.
+        this.loadedSpec = item?.spec ?? {};
         this.name.set(item?.name ?? '');
         this.firstName.set(item?.spec?.firstName ?? '');
         this.lastName.set(item?.spec?.lastName ?? '');
@@ -129,7 +136,8 @@ export class AddHelloComponent implements OnInit {
 
   protected submit(): void {
     this.saving.set(true);
-    const spec = { firstName: this.firstName(), lastName: this.lastName() };
+    // Spec is replaced WHOLESALE by PATCH (no deep merge) — always send the FULL spec; never echo `result`.
+    const spec = { ...this.loadedSpec, firstName: this.firstName(), lastName: this.lastName() };
     const call = this.isEdit
       ? this.svc.update(this.id, spec)
       : this.svc.create(this.name(), spec);

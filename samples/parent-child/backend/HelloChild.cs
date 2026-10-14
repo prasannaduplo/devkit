@@ -6,6 +6,7 @@ using Duplo.Ai.Model.Resource;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using MongoDB.Bson.Serialization.Attributes;
 
 namespace Duplo.Extension.ParentChild;
 
@@ -14,18 +15,21 @@ namespace Duplo.Extension.ParentChild;
 // service can inject IEntityService<HelloParent> to read its parent. See reference/08-parent-child-and-menus.md.
 
 /// <summary>User-supplied inputs for a child. <c>ParentId</c> comes from the base (route-stamped).</summary>
+[BsonIgnoreExtraElements]
 public class HelloChildSpec : ParentRefSpec<HelloParent>
 {
     public string? Note { get; set; }
 }
 
 /// <summary>Outputs the provisioning skill writes back.</summary>
+[BsonIgnoreExtraElements]
 public class HelloChildResult : BaseResult
 {
     public string? Message { get; set; }
 }
 
 [BsonCollection("extension_hello_children")]
+[BsonIgnoreExtraElements]
 public class HelloChild : ResourceBase<HelloChildSpec, HelloChildResult>
 {
     public override string GetTicketOriginType() => "HelloChild";

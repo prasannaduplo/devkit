@@ -8,13 +8,14 @@ Mongo, ticket origin types) and does **not** auto-namespace you — collisions a
 
 | Surface | MUST be | Example | Never |
 |---|---|---|---|
-| `resources[].restSegment` (+ controller `[Route]`) | `extensions/<feature>-<resource>` | `extensions/terraform-deployments` | bare `terraform-deployments`; a built-in segment |
+| `resources[].restSegment` (+ controller `[Route]`) | `extensions/<feature>-<resource>` — **carve-out: a CHILD resource's `restSegment` is the BARE leaf** (`<feature>-children`), because the namespacing comes from the parent's nested route (see 08) | `extensions/terraform-deployments` | bare `terraform-deployments` on a TOP-LEVEL resource; a built-in segment |
 | Backend route (full) | `…/environment/extensions/<feature>-<resource>` | `…/environment/extensions/terraform-deployments` | `…/environment/<bare>` |
 | `frontend.routes[].path` | `extensions/<feature>-<resource>` | `extensions/terraform-deployments` | `clouds/…` (built-in — silently shadows you) |
 | `frontend.menus[]…children[].relativeUrl` | `extensions/<feature>-<resource>` — MUST equal a `routes[].path` | `extensions/terraform-deployments` | `clouds/…` |
 | FE service **data-call URL** (the `REST_SEGMENT` const the service builds `…/environment/${REST_SEGMENT}` from) | `extensions/<feature>-<resource>` — **MUST equal `restSegment`** | `…/environment/extensions/terraform-deployments` | a bare leaf `terraform-deployments` → **404** |
 | Mongo `[BsonCollection("…")]` | `extension_<entity>` (lowercase) | `extension_tfdeployment` | a built-in collection name |
 | `ticketOriginType` | descriptive PascalCase, distinct from built-ins | `TerraformDeployment` | terse/collision-prone `TfState` |
+| Entity class name (= its **access-node type** once the controller declares one — [18-access-control](18-access-control.md)) | feature-prefixed PascalCase, unique across the host and every loaded extension | `TerraformDeployment` | a name a built-in or another extension already uses (`Cluster`, `Network`) — **the load is rejected** |
 | Menu shape | `frontend.menus[]` (array) | — | legacy singular `frontend.menu` (deprecated) |
 | `frontend.remote.remoteEntry` | `/v1/aiservicedesk/extensions/<id>/fe/remoteEntry.json` | — | a Webpack `.js` entry — the host loads Native Federation `.json` entries only |
 

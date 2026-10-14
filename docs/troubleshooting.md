@@ -57,9 +57,13 @@ Error response from daemon: driver failed programming external connectivity on e
 duplo-ui: Bind for 0.0.0.0:4210 failed: port is already allocated
 ```
 
-**Why** — the dev kit's ports are offset from the platform's standard ports so both can run at once, but a
-port can still be taken by something else on your machine. The defaults are `STUDIO_PORT=60031`,
-`UI_PORT=4210`, `AGENT_PORT=8010`, `MONGO_PORT=27018`, `XTERM_PORT=6061`.
+**Why** — the dev kit's ports are mostly offset from the platform's standard ports so both can run at once,
+but a port can still be taken by something else on your machine. The defaults are `STUDIO_PORT=60031`,
+`UI_PORT=4210`, `AGENT_PORT=8010`, `MONGO_PORT=27018`, `XTERM_PORT=6061`, `QDRANT_PORT=6333`.
+
+`QDRANT_PORT` is the exception to the offset: 6333 is Qdrant's own default, so a Qdrant you already run
+locally will hold it. `docker compose up -d` is not guarded against this — one clashing port aborts the
+whole run — so move it in `.env` before starting.
 
 **Fix** — find what holds the port, then either stop it or move the dev kit:
 
@@ -201,7 +205,7 @@ back with `--license <jwt>`, or drop `-y` and run from a terminal. If you only m
 ## LLM provider
 
 *Not yet documented.* This section covers which provider is actually in use given the
-`ANTHROPIC_API_KEY` → Azure → Bedrock precedence, quota and rate-limit errors, and Azure and Bedrock
+`ANTHROPIC_API_KEY` → gateway → Azure → Bedrock precedence, quota and rate-limit errors, and gateway, Azure and Bedrock
 specifics. See [configuration.md](configuration.md#llm-provider) for how the variables resolve today.
 
 ---
@@ -394,7 +398,7 @@ build → deploy → hot-load loop:
 ./scripts/deploy-extension.sh extensions/<name>/dist/extension.zip
 ```
 
-See [getting-started](getting-started/README.md#4-build-and-deploy).
+See [Build your first extension](getting-started/build-your-first-extension.md).
 
 ### More entries belong here
 

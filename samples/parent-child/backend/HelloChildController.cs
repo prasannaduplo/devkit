@@ -1,3 +1,4 @@
+using Duplo.Ai.DataManagement.AccessControl;
 using Duplo.Ai.DataManagement.Controllers.User.Resource;
 using Duplo.Ai.DataManagement.Models;
 using Duplo.Ai.Model.Interfaces;
@@ -15,6 +16,12 @@ namespace Duplo.Extension.ParentChild;
 /// </summary>
 [ApiController]
 [Route("v1/aiservicedesk/user/data/workspaces/{workspaceId}/environment/extensions/hello-parents/{parentId}/hello-children")]
+// Access node under the PARENT resource, not the workspace — granting the parent with subtree
+// cascade covers every child. ParentIdProperty must be spelled out: Spec.ParentId is not one of the
+// registry's convention paths (Spec.ResourceGroupId, OwnerWorkspaceId, WorkspaceId), and omitting it
+// would silently bind this node to the workspace via the OwnerWorkspaceId every entity carries.
+// See reference/18-access-control.md.
+[AccessControl(Parent = typeof(HelloParent), ParentIdProperty = "Spec.ParentId")]
 public class HelloChildrenController : ChildResourceController<HelloChild, HelloParent, HelloChildSpec, HelloChildResult>
 {
     private readonly IEntityService<HelloParent> _parent;

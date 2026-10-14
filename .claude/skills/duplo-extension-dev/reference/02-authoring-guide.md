@@ -14,21 +14,20 @@ For a top-level resource you write (rename `HelloWorld` to your resource):
 | | `HelloWorld` | `ResourceBase<Spec,Result>` | `[BsonCollection("extension_…")]`, `GetTicketOriginType()`, `GetTicketOriginSubType()` |
 | | `HelloWorldHooks` | `DefaultEntityHooks<>` (or `ResourceHooksBase<>`) | nothing, or `GetImmutableSpecFields`/`GetDeletableStatuses` |
 | | `HelloWorldService` | `ResourceServiceBase<Entity,Spec,Result>` | usually nothing (ctor only) |
-| `backend/HelloWorldController.cs` | `HelloWorldsController` | `ResourcesController<Entity,Spec,Result>` | just the `[Route]` |
+| `backend/HelloWorldController.cs` | `HelloWorldsController` | `ResourcesController<Entity,Spec,Result>` | the `[Route]` + the access-node declaration `[AccessControl(Parent = typeof(Workspace), ParentIdProperty = "OwnerWorkspaceId")]` ([18-access-control](18-access-control.md)) |
 
-The skeleton is in [03-base-classes.md](03-base-classes.md#minimal-typed-resource-what-a-extension-ships)
+Every concrete Spec/Result/entity carries `[BsonIgnoreExtraElements]` ([12](12-enrichment-and-live-state.md)).
+The skeleton is in [03-base-classes.md](03-base-classes.md#minimal-typed-resource-what-an-extension-ships)
 and shipped as the hello-world template. That alone is a complete first-class resource — CRUD,
-`status`/`results`, deprovision, view-template, and the provisioning lifecycle, with no boilerplate.
+`status`/`results`, deprovision, and the provisioning lifecycle, with no boilerplate.
 
-## Choose how it provisions
+## How it provisions
 
-- **Agent-based (recommended, default for extensions):** map a skill to `originType/subType` in the
-  manifest's `skillMappings`. On create, the platform opens a ticket; your skill reads
-  `shared/<subtype>.json`, does the work, and writes back via `POST {id}/results` + `{id}/status`. Override
-  nothing in the service. (See the hello-world `skills/provision-helloworld/SKILL.md`.)
-- **Synchronous (passthrough):** no skill — override `ProvisionDirectAsync`/`UpdateDirectAsync`/
-  `DeprovisionDirectAsync`, set `Status=Complete` and populate `Result` inline.
-- **Background (worker):** return `Worker` from `NoSkillsFallbackMode` for continuous reconcile + drift.
+The provisioning mode — Agent, Worker, Passthrough, No-provision — is chosen from what the work *is*, never
+defaulted; the decision table is in `SKILL.md` Phase 1 and the mode mechanics in
+[01-architecture](01-architecture.md). Agent mode maps a skill in `skillMappings` and overrides nothing in the
+service; Passthrough overrides `ProvisionDirectAsync`/`UpdateDirectAsync`/`DeprovisionDirectAsync`; Worker returns
+`Worker` from `NoSkillsFallbackMode` and ships a `ResourceWorkerBase`.
 
 ## Which hooks you'll actually override
 
@@ -36,7 +35,7 @@ Most extensions override none. When you do, the usual ones:
 
 - `ValidateSpecAsync` — validate your spec fields.
 - `ValidateAsync` — entity/name rules (call `base` first).
-- `EnrichResultAsync` — show live cloud state on view (see [05-custom-actions.md](05-custom-actions.md)).
+- `EnrichResultAsync` — show live cloud state on view ([12](12-enrichment-and-live-state.md)).
 - `OnAfterStatusUpdateAsync` / `OnAfterResultUpdateAsync` — react to lifecycle transitions.
 - `GetImmutableSpecFields` / `GetDeletableStatuses` (in `ResourceHooksBase`) — freeze fields / gate delete.
 
@@ -44,12 +43,15 @@ Decision table: [04-hooks.md](04-hooks.md#which-to-override--quick-guide).
 
 ## Resource-group-scoped (env-child) resources
 
-If your resource lives **under a Resource Group** (like a Kubernetes `Namespace`), use the DevOps
-variants instead: entity `: ResourceGroupRef<Spec,Result>`, spec `: ResourceGroupSpecRef`
-(adds `EnvironmentId`+`ResourceGroupId`), service `: ResourceGroupChildServiceBase<,,>`, controller
-`: ResourceGroupControllerRef<,,>`. The service auto-derives `ScopeIds` from the parent RG and enriches
-the agent spec with `ResourceGroupContext`. (First-party reference: the in-repo
-`env-child-resource-provisioning` skill.)
+First-party resources that live **under a Resource Group** (like a Kubernetes `Namespace`) use the DevOps
+variants: entity `: ResourceGroupRef<Spec,Result>`, spec `: ResourceGroupSpecRef` (adds
+`EnvironmentId`+`ResourceGroupId`), service `: ResourceGroupChildServiceBase<,,>`, controller
+`: ResourceGroupControllerRef<,,>`.
+
+> **Those DevOps types are not part of the extension SDK feed, and neither is the `ResourceGroup` entity** — an
+> RG-scoped extension resource can be neither compiled against the published SDK nor declared as an RG-parented
+> access node ([18-access-control](18-access-control.md)). Model the resource as workspace-scoped with an
+> RG/environment id in its spec.
 
 ## The manifest (`manifest.json`)
 
@@ -77,97 +79,62 @@ Ties the bundle together. For a typed extension (see the hello-world manifest):
   "frontend": { "remote": { … }, "menus": [ … ], "routes": [ … ] }
 }
 ```
-Critical: `archetype` must be `"typed"` (not `"skill-based"`) so the loader takes the DLL path; the five
-`*Type` names must be the fully-qualified type names in your DLL; `backend.assemblyDir` is
-`<id>/<version>/backend`.
+Critical: `archetype` must be `"typed"` so the loader takes the DLL path; the five `*Type` names must be the
+fully-qualified type names in your DLL; `backend.assemblyDir` is `<id>/<version>/backend`. **Bump `version` on
+every backend code change** ([06](06-registration.md#reloading-changed-code--bump-manifestversion)).
 
-### Naming convention — never collide with the platform or other extensions
+### Naming
 
-> **Canonical rule lives in [00-naming](00-naming.md) — that file is authoritative; the build gate enforces it.**
-> The summary below must stay consistent with it.
+Every customer-facing name is namespaced so it cannot collide with the platform or another extension —
+`extensions/<feature>-<resource>` for the REST segment, FE route and menu URL; `extension_<entity>` for the Mongo
+collection; a descriptive PascalCase `ticketOriginType`. **[00-naming](00-naming.md) is canonical and the build gate
+enforces it.** Two conventions it doesn't cover: the C# namespace is `Duplo.Extension.<Name>` (what the scaffold and
+every sample use), and any `…/environment/<segment>/{id}/results|status` URL a skill script posts to MUST use the
+extension's own `restSegment` — keep the skill in sync with the manifest and the controller `[Route]`.
 
-An extension's resources share the platform's runtime (routes, Mongo db, ticket origin types). Pick names that
-are **collision-free by construction** — the platform does NOT auto-namespace them for you:
+### `frontend.menus[]`
 
-- **Mongo collection** (`[BsonCollection("…")]`): prefix with `extension_` → `extension_<entity>` (lowercase),
-  e.g. `extension_tfstate`. Never reuse a built-in collection name.
-- **REST segment / API path** (`restSegment` + your controller `[Route]`): namespace the API under
-  `extensions/` and use a descriptive name → `…/environment/extensions/<feature>-<resource>` (e.g.
-  `…/environment/extensions/terraform-states`), never the built-in's flat segment (`tfstates`). The controller
-  `[Route]` must match this path exactly. (`…/environment/extensions/…` is reserved for customer extensions; the
-  platform's own Extension-Studio authoring resource lives at `…/environment/extension-studio`, so it won't
-  shadow your `extensions/<…>/{id}` routes.)
-- **Frontend route + menu** (`frontend.routes[].path`, `frontend.menus[].relativeUrl`): namespace under
-  `extensions/` → `extensions/<feature>-<resource>` (mounts at `/ai/suite/{tenant}/extensions/…`). Do NOT reuse
-  the built-in `clouds/…` route paths — the host registers built-in routes first, so a duplicate `clouds/…`
-  path silently resolves to the built-in module (your pages show the wrong/old data).
-- **Ticket origin type** (`ticketOriginType` + the entity's `GetTicketOriginType()`): a descriptive PascalCase
-  string distinct from any built-in — e.g. `TerraformState`, not `TfState`. `subType` can be feature-specific.
-- **C# namespace**: `Duplo.Extensions.<Feature>` (class names can stay conventional; the namespace disambiguates).
-- **Skill callbacks** must POST to the extension's `extensions/<…>` API path (keep them in sync with the
-  controller `[Route]` / manifest `restSegment`).
-- **Skill callbacks**: any `…/environment/<segment>/{id}/results|status|…` URL the skill's scripts/phase-docs
-  POST to MUST use the extension's `restSegment` (not a built-in's) — otherwise status/result callbacks hit the
-  wrong controller. Keep the skill's hardcoded segments in sync with the manifest.
-
-(While a built-in feature with the same purpose still ships, this is also how you avoid an ASP.NET
-`AmbiguousMatchException` on duplicate routes and duplicate origin-type/skill mappings.)
-
-### `frontend.menus[]` — where the extension appears in the left-nav
-
-`menus` is an **array of menu trees**; each node is `{ id, title, type, matIcon|icon, relativeUrl?, order?, children?[] }`.
-The portal find-or-creates each node in the nav **by title** (case-insensitive), recursing into `children`. Placement
-is chosen explicitly per extension (the `duplo-extension-dev` skill asks the user — there is no silent default):
-- **A new top-level group** — a tree whose root title doesn't exist yet (e.g. `Jenkins`, `GCP`); use
-  `type: "collapsible-section"` with `item` children.
-- **Nest under an existing section** — make that section's **title** the tree root (e.g. `DevOps`,
-  `Infrastructure`); the existing item is reused and your children appended. Title is the only key — never a
-  `parentGroupId`/id.
-- **No menu** — omit `menus`. The extension loads and its routes are live, but nothing renders in the nav.
-
-The author supplies titles only; **you (the agent) fill** each node's `id` (`<manifest.id>-<slug>`), each leaf's
-`relativeUrl`, and the matching `frontend.routes[]` entry — every `relativeUrl`/`path` namespaced under
-`extensions/` ([00-naming](00-naming.md)). One extension may contribute several top-level groups.
-
-> Legacy `frontend.menu = { parentGroupId, node }` (single, id-matched) still loads for back-compat but is
-> **deprecated** — new extensions MUST use `menus[]`.
+`menus` is an **array of menu trees** matched into the left-nav **by title**: a root title that doesn't exist yet
+becomes a new top-level group; a root that matches an existing section (`DevOps`) nests into it; omit `menus` for
+no nav entry. The author supplies titles; you fill each node's `id`, `relativeUrl` and the matching
+`frontend.routes[]`. Full rules, shapes and the legacy `frontend.menu` deprecation:
+[08-parent-child-and-menus](08-parent-child-and-menus.md#frontend-how-the-child-shows-up).
 
 ## Build, package, load
 
-The `duplo-extension-dev` skill (`../SKILL.md`) does this — both inside a Extension provisioning ticket and on
+The `duplo-extension-dev` skill (`../SKILL.md`) does this — both inside an Extension provisioning ticket and on
 your local machine:
 
 1. `GET …/extensions/sdk-version` → pin; `GET …/extensions/sdk-bundle` → unzip to `backend/sdk-packages`.
 2. `dotnet publish backend -c Release -o dist/backend -p:DuploSdkVersion=<ver>` (SDK is compile-only).
-3. `(cd frontend && npm install && npm run build)` → `frontend/dist/remoteEntry.json` + its ESM chunks.
+3. `(cd frontend && npm ci && npm run build)` → `frontend/dist/remoteEntry.json` + its ESM chunks.
+   The host parses ONLY a **Native Federation `remoteEntry.json`** — a Webpack `remoteEntry.js` will not load.
 4. Zip `{manifest.json, backend/, fe/, skills/}`.
-5. **Load:** in-platform → `POST …/extensions/{id}/load-bundle` (scoped token); local → `POST …/admin/extensions/load-bundle` (admin token).
+5. **Load:** in-platform → `POST …/environment/extension-studio/{id}/load-bundle` (scoped token); local →
+   `POST …/admin/extensions/load-bundle` (admin token).
 
 Then the new resource's route is live: `GET …/environment/<restSegment>` → 200, and it appears in the menu.
 
-## Frontend (optional but recommended)
+## Frontend
 
 Ship an Angular **Native Federation** remote (list/add/view) and **use the platform UI library
-`@duplocloud-internal/ng-common-lib`** so your pages match the rest of the suite — don't hand-roll tables,
-forms, or view layouts. Reach host services via the string DI tokens `REMOTE_DuploHttpClient` and
-`REMOTE_UserSession` (`workspaceId = session.tenant.TenantId`), call your own route
-`…/environment/<restSegment>`, and expose a `Routes` array as `./Extension` (the host's registrar hands it
-straight to `loadChildren`, which accepts routes or an NgModule).
+`@duplocloud-internal/ng-common-lib`** so your pages match the rest of the suite — don't hand-roll tables or
+forms. Reach host services via the string DI tokens `REMOTE_DuploHttpClient` and `REMOTE_UserSession`
+(`workspaceId = session.tenant.TenantId`), call your own route `…/environment/<restSegment>`, and expose a
+`Routes` array as `./Extension` (the host's registrar hands it straight to `loadChildren`).
 
 **Component shape** — the full ruling, with the per-API catalogue, is the [`use-ng22`](../../use-ng22/SKILL.md)
 skill; load it before writing frontend code. In short: standalone components that declare their own
-`imports`, with **no `changeDetection` property** and all async state in `signal()`. Angular 22 defaults a component with no strategy to `OnPush`,
-so a plain field assigned from a `subscribe` never repaints — the build stays green and the list just sits
-empty. A signal write marks the view dirty, which is what makes the default correct instead of a trap. Use
-`inject()`, `input()`/`computed()`/`viewChild()`, and the `@if`/`@for`/`@switch` block syntax. `helloworld`
-is the worked reference; importing an NgModule (`SearchableDatatableModule`, `SharedFormsModule`,
-`CommonLibComponentsModule`) from a standalone component's `imports` is fine and is how the lib is consumed.
+`imports`, with **no `changeDetection` property** and all async state in `signal()`. Angular 22 defaults a
+component with no strategy to `OnPush`, so a plain field assigned from a `subscribe` never repaints — the build
+stays green and the list just sits empty. A signal write marks the view dirty, which is what makes the default
+correct instead of a trap. Use `inject()`, `input()`/`computed()`/`viewChild()`, and the `@if`/`@for`/`@switch`
+block syntax. Importing an NgModule (`SearchableDatatableModule`, `SharedFormsModule`, `CommonLibComponentsModule`)
+from a standalone component's `imports` is fine and is how the lib is consumed.
 
-**Toolchain** — match the host portal; a major skew from it degrades singleton sharing (with
-`strictVersion: false` Native Federation still resolves one copy, but logs a version warning). Angular
-`^22.1.0`, TypeScript `6.0.3`, npm `>= 10.9.0`, and Node on Angular 22's supported line
-(`^22.22.3 || ^24.15.0 || >=26.0.0` — the host portal's `package.json` still declares `>= 22.12.0`, which is
-Angular 21's floor; don't copy that number). The remote is built by
+**Toolchain** — match the host portal; a major skew degrades singleton sharing (with `strictVersion: false`
+Native Federation still resolves one copy, but logs a version warning). Angular `^22.1.0`, TypeScript `6.0.3`,
+npm `>= 10.9.0`, Node on Angular 22's supported line (`^22.22.3 || ^24.15.0 || >=26.0.0`). The remote is built by
 `@angular-architects/native-federation` from `frontend/federation.config.js`; there is **no standalone dev
 server** — no `serve` target, no `index.html`, no `bootstrap.ts`. The loop is **build → deploy → hot-load**
 (`scripts/build-extension.sh` + `scripts/deploy-extension.sh`), and you see your pages inside the real portal.
@@ -177,8 +144,8 @@ In `angular.json`, set `outputPath` to `{ "base": "dist", "browser": "" }` — A
 
 > ⚠️ **The FE `REST_SEGMENT` MUST be the FULL namespaced segment — `extensions/<feature>-<resource>` — and equal
 > the manifest `resources[].restSegment` and the controller `[Route]`.** It is NOT a bare leaf. The service builds
-> `…/environment/${REST_SEGMENT}`, so a bare leaf 404s every list/get/create/view-template call. `build-extension.sh`
-> fails the build if they don't match. (`origin-context`/`ticketName` use a different `/tickets/…` path — unaffected.)
+> `…/environment/${REST_SEGMENT}`, so a bare leaf 404s every list/get/create call. `build-extension.sh` fails the
+> build if they don't match. (`origin-context`/`ticketName` use a different `/tickets/…` path — unaffected.)
 > ```ts
 > const REST_SEGMENT = 'extensions/widgets';   // == manifest restSegment == controller [Route]
 > private base() { return `/v1/aiservicedesk/user/data/workspaces/${this.workspaceId()}/environment/${REST_SEGMENT}`; }
@@ -196,52 +163,47 @@ In `angular.json`, set `outputPath` to `{ "base": "dist", "browser": "" }` — A
 > | `federation.config.js` `name` (== manifest `frontend.remote.remoteName`) | unique `duploExtension<Name>` |
 > Update the routes in `extension.routes.ts`, and each component's own `imports`, to the renamed classes.
 
-**Match the platform resource pattern** (network-baselines / TFDeployment) so an extension's pages are
-indistinguishable from a first-party resource. The worked reference is
-`duplo-ui/portal/ai-studio/src/app/environment/network-baselines/`.
-
-Use these library pieces (import from `@duplocloud-internal/ng-common-lib`):
+Use these library pieces (import from `@duplocloud-internal/ng-common-lib`). The full catalog — every export,
+and which ones don't work in a remote — is [20-ui-library](20-ui-library.md):
 - **List** → `SearchableDatatableModule` (`<searchable-datatable [rows]="rows" (add)="…" (filter)="filterUpdate()">`
   with projected `<ngx-datatable-column>` cells, an actions `ngbDropdown`, and a status badge). Two things the list
   component **MUST** do — a plain `[rows]` + `(add)` binding that loads once in `ngOnInit` is the #1 pair of bugs:
   - **Wire the filter.** `<searchable-datatable>` owns the search box and emits `(filter)` on each keystroke, but it
-    does **not** filter — it renders whatever `[rows]` you hand it. So keep a full `allRows` backing array and recompute
-    the shown `rows` yourself. Never bind `[rows]` to the raw fetch result with no `(filter)` handler (the box then does
-    nothing):
+    does **not** filter — it renders whatever `[rows]` you hand it. Keep a full `allRows` backing signal and derive
+    the shown `rows` with `computed()`. Never bind `[rows]` to the raw fetch result with no `(filter)` handler:
     ```ts
-    @ViewChild(SearchableDatatableComponent) private table?: SearchableDatatableComponent;
-    rows: MyRes[] = []; private allRows: MyRes[] = [];
-    private searchFields = ['name', 'status', 'spec.firstName'];   // string fields / dot-paths only (lodash get)
-    filterUpdate(): void {
-      const v = this.table?.searchTerm?.toLowerCase()?.trim();
-      this.rows = v ? this.allRows.filter(r => FilterTableUtils.searchByFields(r, this.searchFields, v))
-                    : this.allRows.slice();
-    }
+    private readonly table = viewChild(SearchableDatatableComponent);
+    private readonly allRows = signal<MyRes[]>([]);
+    private readonly filterTerm = signal('');
+    private readonly searchFields = ['name', 'status', 'spec.firstName'];   // string fields / dot-paths only (lodash get)
+    protected readonly rows = computed(() => {
+      const term = this.filterTerm();          // searchByFields never lowercases the needle — pass a PRE-lowercased term
+      return term ? this.allRows().filter(r => FilterTableUtils.searchByFields(r, this.searchFields, term)) : this.allRows();
+    });
+    protected filterUpdate(): void { this.filterTerm.set(this.table()?.searchTerm?.toLowerCase()?.trim() ?? ''); }
     ```
   - **Re-fetch on workspace switch.** Do NOT load only in `ngOnInit` — that never re-runs when the user switches
     workspace, so the list shows the old workspace's rows until a full page reload. Subscribe to the host session's
     `getTenantRefreshTimer(true)` (it emits `[tenant, tenantChanged]` on first load, on every workspace switch, and on
-    the poll tick — no reload needed) and re-call your `list()` each time. Add `providers: [SubDestroyService]` and
-    `takeUntil(this.destroy$)`:
+    the poll tick — no reload needed) and re-call your `list()` each time, with `takeUntilDestroyed(this.destroyRef)`:
     ```ts
-    @Component({ …, providers: [SubDestroyService] })
-    constructor(private svc: MyService, private destroy$: SubDestroyService,
-                @Inject(REMOTE_UserSession) private session: any) {}
+    private readonly session = inject<any>(REMOTE_UserSession as any);
+    private readonly destroyRef = inject(DestroyRef);
     ngOnInit(): void {
-      this.session.getTenantRefreshTimer(true).pipe(takeUntil(this.destroy$))
+      this.session.getTenantRefreshTimer(true).pipe(takeUntilDestroyed(this.destroyRef))
         .subscribe(([, changed]: [any, boolean]) => this.refresh(!!changed));
     }
     private refresh(changed: boolean): void {
-      if (changed) { this.table?.startLoading(); }
-      this.svc.list().pipe(takeUntil(this.destroy$)).subscribe({
-        next: rows => { this.allRows = rows || []; this.filterUpdate(); this.table?.refresh(); },
-        error: () => { this.allRows = []; this.filterUpdate(); this.table?.stopLoading(); },
+      if (changed) { this.table()?.startLoading(); }
+      this.svc.list().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+        next: rows => { this.allRows.set(rows ?? []); this.table()?.refresh(); },
+        error: () => { this.allRows.set([]); this.table()?.stopLoading(); },
       });
     }
     ```
-  `FilterTableUtils`, `SubDestroyService`, `SearchableDatatableComponent` import from `@duplocloud-internal/ng-common-lib`;
-  `REMOTE_UserSession` is the same host token the FE service already injects. The worked reference is
-  `duplo-ui/portal/ai-studio/src/app/environment/network-baselines/list-network-baselines/`.
+  `FilterTableUtils` and `SearchableDatatableComponent` import from `@duplocloud-internal/ng-common-lib`;
+  `REMOTE_UserSession` is the same host token the FE service already injects. Worked reference: the scaffold's
+  `list-hello.component.ts`.
 - **Add / Edit** → the **`panel-form-accordion`** 3-column layout (title+description | inputs | per-field help).
   ⚠️ The column widths are a host **SCSS mixin** that each host component `@include`s — they are **NOT** global
   CSS, and the published lib ships compiled CSS only. So the remote must carry the column rules in its own
@@ -261,7 +223,7 @@ Use these library pieces (import from `@duplocloud-internal/ng-common-lib`):
       <form #f="ngForm" class="form form-vertical" (ngSubmit)="f.valid && submit()">
         <div class="form-container" form-group-errors #formGroupErrors showDetailsWhen="submitted">
           <form-field><label class="element-label">Name *</label>
-            <input class="form-control" name="name" [(ngModel)]="name" required validation-state validation-errors></form-field>
+            <input class="form-control" name="name" [ngModel]="name()" (ngModelChange)="name.set($event)" required validation-state validation-errors></form-field>
           …
         </div></form>
     </div>
@@ -271,56 +233,20 @@ Use these library pieces (import from `@duplocloud-internal/ng-common-lib`):
   </div></div>
   ```
   `form-field` + `validation-state`/`validation-errors`/`form-group-errors` are from `SharedFormsModule`.
-  **Template-driven only** (`ngForm` + `ngModel`) — no Reactive Forms.
-- **Detail view** → `ViewWithSidecardsComponent` + `ViewHeaderCardComponent` + `SidecardComponent`, with a
-  **Spec/Result toggle** (NOT top-level `ngbNav` tabs). Header `#title` is an avatar-badge + name in an `<h3>`;
-  `#actions` are `ngbDropdownItem` links; `#headerFilter` is `<app-flat-status-filter>` toggling
-  `activePanel: 'spec'|'result'`. The body is `@switch (activePanel())` (spec cards | the result renderer), and a
-  **footer** shows `subStatus` + (agent mode only — see below) a "Track Provisioning Status" button. `item`,
-  `activePanel` and `viewTemplate` are `signal()`s, so `@if (item(); as it)` unwraps the loaded resource once:
+  **Template-driven only** (`ngForm` + `ngModel`) — no Reactive Forms. Multi-step forms and the polish checklist:
+  [14-forms-and-wizards](14-forms-and-wizards.md). Surfacing the real create error: [15-error-handling](15-error-handling.md).
+- **Detail view** → the detail-page shell the scaffold already carries: a card-less header with the
+  `Spec | Result` switcher, the main card (Spec tiles, or the Result tab strip) and the lifecycle rail whose phase
+  timeline you derive from **your** resource's status + result. The anatomy, the rules, the per-mode ladders and
+  the per-mode ticket UI (Agent only) are all in [19-detail-page](19-detail-page.md); what goes inside the Result
+  strip — Overview tiles, a tab per concern, panels, polling — is [17-custom-result-views](17-custom-result-views.md).
+  Keep the shared `shared/` files as copied; rewrite `phases()` and the Result content.
 
-  > **The "Track Provisioning Status" button + "View Provisioning Ticket" action are AGENT-mode only.** They open
-  > the provisioning ticket's chat — which exists only when a skill is mapped. **Worker / Passthrough / No-provision
-  > modes create no ticket**, so `ticketName()` returns null and the button is dead UI. For those modes, OMIT the
-  > footer button, the `#actions` "View Provisioning Ticket" link, the list-row "Track Provisioning" item, AND the
-  > `track()`/`ticketName()` methods (and label the add button **"Create"**, not "Provision"). Keep them only for
-  > Agent mode.
-  ```html
-  @if (item(); as it) {
-  <view-header-card [compactActions]="true">
-    <ng-template #title><h3 class="text-uppercase mr-auto">
-      <span class="badge avatar-badge">{{ it.name?.[0] }}</span><span class="name-badge">{{ it.name }}</span></h3></ng-template>
-    <ng-template #actions><a ngbDropdownItem (click)="track()">View Provisioning Ticket</a></ng-template>
-    <ng-template #headerFilter><app-flat-status-filter [filters]="panelFilters" [activeStatus]="activePanel()"
-      [showCount]="false" (changed)="activePanel.set($event)"></app-flat-status-filter></ng-template>
-  </view-header-card>
-  <sidecard featherIcon="activity"><h6 class="card-subtitle text-muted">Status</h6>
-    <h4 class="card-title"><app-status-badge [status]="it.status"></app-status-badge></h4></sidecard>
-  <section class="card px-2 py-1">
-    @switch (activePanel()) {
-      @case ('spec') { <div>…spec cards…</div> }
-      @case ('result') { <app-resource-template-view [template]="viewTemplate()" [data]="it"></app-resource-template-view> }
-    }
-    <div class="d-flex justify-content-end align-items-center px-1 pb-1 pt-50">
-      @if (it.subStatus) {
-        <span class="font-small-3 text-muted mr-75 text-truncate" [title]="it.subStatus">{{ it.subStatus }}</span>
-      }
-      <button class="btn btn-primary btn-sm" (click)="track()">Track Provisioning Status</button>
-    </div>
-  </section>
-  }
-  ```
-  `panelFilters = [new FlatStatusFilter({name:'spec',label:'Spec'}), new FlatStatusFilter({name:'result',label:'Result'})]`.
-- **View (result)** → the declarative result-template renderer (`<app-resource-template-view>`) — see below.
-
-> **Host-only components you must VENDOR** (not in the published lib): the result renderer
-> `app-resource-template-view` (copy `ai-studio/src/app/shared/resource-template-view/` into the remote, decoupled
-> to need only CommonModule + ng-bootstrap — see the sample's `result-template/`). The platform's
-> `app-sub-status-display` injects a host-only `SUCCESS_REPORTER` token that can't resolve in a remote — **inline a
-> simple `<span [title]="item.subStatus">` instead** (as the samples do). The status pill `status-with-style` is
-> **NOT exported** by the lib's `CommonLibComponentsModule` either — using `<status-with-style>` renders a blank
-> unknown element. Ship the tiny `app-status-badge` instead (copy `shared/status-badge.component.ts` from the
-> sample and declare it in your module). Everything else above is importable from the lib.
+> **Host-only components — do NOT use in a remote:** `app-sub-status-display` injects a host-only
+> `SUCCESS_REPORTER` token that can't resolve in a remote. The status pill `status-with-style` is **NOT exported**
+> by the lib's `CommonLibComponentsModule` — using `<status-with-style>` renders a blank unknown element; ship the
+> scaffold's `app-status-badge`. `scrollable-nav-tab`, `ngbNav`, `ngbDropdown`, `searchable-datatable` and the
+> form components are importable from the lib.
 
 ### Install (vendored tarball — no registry, no token)
 `@duplocloud-internal/ng-common-lib` is not published to a registry you can reach. Every frontend in this
@@ -347,10 +273,11 @@ dependency here**, because that is where `requiredVersion: 'auto'` looks it up (
 `@ngx-translate/core`, `@ng-bootstrap/ng-bootstrap`, `@ng-select/ng-select`, `@swimlane/ngx-datatable`,
 `ngx-toastr`, `ngx-markdown`, `ngx-monaco-editor-v2`, `@angular/cdk`, `@angular/material`,
 `@ngbracket/ngx-layout` (`^22.0.1`), `ngx-echarts` (`^22.0.0`), `angularx-flatpickr` (`^8.1.0`) — plus `bootstrap`.
-Pin them to the **same majors the host portal ships** (today `@ng-bootstrap/ng-bootstrap` ^21,
+Pin them to the **same majors the host portal ships** (`@ng-bootstrap/ng-bootstrap` ^21,
 `@swimlane/ngx-datatable` ^25 — check `duplo-ui/portal/package.json`): they are shared singletons, and
 `verify-remote-federation.js` reports a major mismatch against the host. `bootstrap` (^4.6.2) is the exception —
-CSS-only, not in the host's shared list, and not federated at all.
+CSS-only, not in the host's shared list, and not federated at all. A dependency with no Angular 22 release
+(`ngx-toastr`) is pinned with the `overrides` block in `package.json`, never by loosening the whole install.
 
 ### Native Federation sharing — share the lib's DI peer packages (avoids `NullInjectorError`)
 Do **not** share `@duplocloud-internal/ng-common-lib` itself (the host bundles its own copy under a different
@@ -423,9 +350,8 @@ module.exports = withNativeFederation({
 own code never imports them — ng-common-lib's components reach their DI tokens transitively, and omitting any
 of the three throws `NG0201` at runtime on every common-lib page.
 
-Sub-path entries (`@angular/common/http`, `rxjs/operators`) from the old webpack list are deliberately absent —
-Native Federation resolves secondary entry points through the parent package. `@angular/animations` is absent
-because the host no longer ships it.
+Share parent packages only — Native Federation resolves secondary entry points (`@angular/common/http`,
+`rxjs/operators`) through the parent. `@angular/animations` is not shared because the host does not ship it.
 
 After building, check the remote against the host yourself — nothing in `build-extension.sh` runs it for you:
 ```bash
@@ -436,76 +362,52 @@ manifest's `remoteName`, that the exposed module is present, and — when given 
 package the remote declares is published by the host at the same major.
 
 Bootstrap 4 + the Vuexy theme are served globally by the host, so the remote ships no CSS. Build with a strict
-`npm install` — never npm's legacy peer-dependency flag. Where a dependency has no Angular 22 release
-(`ngx-toastr`, at time of writing), the frontend's `package.json` pins it with an `overrides` block rather than
-loosening the whole install.
+`npm ci` / `npm install` — never npm's legacy peer-dependency flag.
 
-### Viewing the result — the declarative view-template
-Render a resource's **result** with the platform's declarative template instead of bespoke HTML:
-1. Ship `resources-frontend-templates/<Type>/<subType>.view-template.json` in your bundle (at the bundle root,
-   next to `manifest.json`). The studio loader registers that directory, and your inherited
-   `GET …/environment/<restSegment>/view-template?type=<Type>&subType=<subType>` endpoint serves it.
-2. In your view component, fetch it and render via the lib's `ResourceTemplateViewModule`:
-   ```html
-   @if (viewTemplate(); as tpl) {
-     <app-resource-template-view [template]="tpl" [data]="item()"></app-resource-template-view>
-   }
-   ```
-The template is groups → typed fields (`single`/`multi`/`table`/`raw`) addressing your result blob by dot-path
-(`result.fullName`, …), with `hideWhen` and drill-down `details`. Full shape + a worked example:
-[09-result-templates.md](09-result-templates.md). Always keep a small fallback (e.g. lib view-cards) for when
-no template is served.
+### Viewing the result
 
-For action buttons (logs, etc.) see [05-custom-actions.md](05-custom-actions.md).
+The Result view is design work done from the settled Result fields — there is no generic renderer
+([09](09-result-templates.md)). Per resource: the **phases** the lifecycle rail shows
+([19-detail-page](19-detail-page.md) → "Deriving phases"), the **Overview tiles** (every result fact gets a tile;
+planned values from the spec until the result lands), and the **tabs** beyond Overview (one standalone panel per
+distinct concern, lazy-loaded, fed by your controller endpoints) — [17-custom-result-views](17-custom-result-views.md);
+worked example `samples/network-stack`. Action buttons: [05-custom-actions](05-custom-actions.md).
 
-### Canvas renderers & ticket wrappers — render your own agent artifacts + add ticket actions
+### Canvas renderers — render your own agent artifacts
 When your skill writes a canvas document (an artifact under `./canvas-documents/`), the platform opens it in the
-chat canvas panel. To render it with **your own component** (instead of falling back to a plain file view), and
-to add deployment-level action buttons, wrap the platform ticket and register a canvas renderer — **no host
-change required**.
+chat canvas panel. To render it with **your own component** instead of the plain file view, register a canvas
+renderer from a component of yours that is alive while the ticket is open — **no host change required**. (The
+platform's ticket-page shell `ResourceTicketModule` is not exported by the lib, so a remote cannot wrap the ticket
+page itself; register from your detail view or a panel instead.)
 
-1. **Wrap the ticket.** Point your resource's `:id/ticket/:ticketId` route at your own wrapper component that
-   composes the platform `<app-resource-ticket>` shell. Project action buttons into its `[ticket-actions]` slot:
-   ```html
-   <app-resource-ticket [ticket]="ticket" [resource]="resource">
-     <button ticket-actions class="btn btn-sm btn-outline-primary" (click)="plan()">Plan</button>
-   </app-resource-ticket>
-   ```
-   (Import `ResourceTicketModule` from the lib; read `ticket`/`resource` from `route.snapshot.data`.)
-
-2. **Register a renderer** from the wrapper's `ngOnInit`. Inject the registry via the **`REMOTE_CanvasRendererRegistry`
+1. **Register a renderer** in `ngOnInit`. Inject the registry via the **`REMOTE_CanvasRendererRegistry`
    token** (the host owns the one instance; your remote bundles its own copy of the lib, so inject the token, not
-   the class). Unregister on destroy so it only applies inside your ticket:
+   the class). Unregister on destroy so it only applies while your view is mounted:
    ```ts
-   import { Inject } from '@angular/core';
    import { CanvasRendererRegistry, REMOTE_CanvasRendererRegistry } from '@duplocloud-internal/ng-common-lib';
-   // …
-   constructor(@Inject(REMOTE_CanvasRendererRegistry) private registry: CanvasRendererRegistry) {}
+   private readonly registry = inject<CanvasRendererRegistry>(REMOTE_CanvasRendererRegistry as any);
    ngOnInit() {
      this.registry.register({
        id: 'myext:my-doc',                 // unique; re-register replaces
        title: 'My Preview',
        priority: 10,                       // >0 wins over platform built-ins
        match: a => !!a.id?.endsWith('my-doc.yaml'),
-       component: MyPreviewComponent,      // your component (declared in MyPreviewModule)
-       ngModule:  MyPreviewModule,         // module providing the component's deps (required for remotes)
+       component: MyPreviewComponent,      // your standalone component
      });
+     inject(DestroyRef).onDestroy(() => this.registry.unregister('myext:my-doc'));
    }
-   ngOnDestroy() { this.registry.unregister('myext:my-doc'); }
    ```
 
-3. **Author the renderer component.** It receives the doc id + a content stream via the injected `CANVAS_DOC`
-   token (not an `@Input` — the host mounts it through `ngComponentOutlet`):
+2. **Author the renderer component.** It receives the doc id + a content stream via the injected `CANVAS_DOC`
+   token (not an `input()` — the host mounts it through `ngComponentOutlet`):
    ```ts
    import { CANVAS_DOC, CanvasDoc } from '@duplocloud-internal/ng-common-lib';
-   constructor(@Inject(CANVAS_DOC) private doc: CanvasDoc) {}
+   private readonly doc = inject<CanvasDoc>(CANVAS_DOC as any);
    ngOnInit() { this.doc.content$.subscribe(text => /* parse + render */); }
    ```
 
 **Namespace your canvas filename** (`<feature>-<doc>.yaml`) so it can't collide with another extension; `priority`
-is the explicit override knob if you intentionally replace a built-in renderer. Worked reference: the Terraform
-extension's `tf-deployment-ticket` wrapper (registers `tf:extracted-environments` → its own
-`ExtractedEnvironmentsPreviewComponent`).
+is the explicit override knob if you intentionally replace a built-in renderer.
 
-Next: [05-custom-actions.md](05-custom-actions.md) · [09-result-templates.md](09-result-templates.md) ·
-[06-registration.md](06-registration.md).
+Next: [05-custom-actions.md](05-custom-actions.md) · [19-detail-page.md](19-detail-page.md) ·
+[17-custom-result-views.md](17-custom-result-views.md) · [06-registration.md](06-registration.md).

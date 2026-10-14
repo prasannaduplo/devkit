@@ -75,25 +75,20 @@ Add your own input fields as plain properties (e.g. `public string? FirstName { 
 
 Add your own output fields as plain properties (e.g. `public string? FullName { get; set; }`).
 
-> **Always annotate every concrete entity/`Spec`/`Result` with `[BsonIgnoreExtraElements]`** (on the concrete
-> class — inheriting from `BaseSpec`/`BaseResult` is not enough). Two reasons: **(1) schema evolution** — old
-> Mongo docs that still carry removed fields would otherwise throw on read; **(2) write-side drop** — the
-> agent's `POST {id}/results` / `{id}/status` JSON is deserialized into your typed class, and any key that
-> doesn't map to a declared `[BsonElement]` property is **silently discarded**. A name mismatch between an
-> agent/terraform output and your property therefore *loses the value* (e.g. terraform output `environment_id`
-> → `environmentId` never persisted because the Result declared `cloudServicesEnvironmentId` instead). Make the
-> annotation a default on every extension class. See [12-enrichment-and-live-state](12-enrichment-and-live-state.md).
+> **Annotate every concrete entity/`Spec`/`Result` with `[BsonIgnoreExtraElements]`** (on the concrete class —
+> inheriting it from `BaseSpec`/`BaseResult` is not enough). Why, and the write-side drop it guards against:
+> [12-enrichment-and-live-state](12-enrichment-and-live-state.md#always-annotate--bsonignoreextraelements).
 
 ### `ParentRefSpec<TParent>` (`Resource/ParentRefSpec.cs`) — spec for a child resource
 `public abstract class ParentRefSpec<TParent> : BaseSpec where TParent : Entity` — adds `string? ParentId`
 (stamped from the nested route, immutable). Use with `ChildResourceController<>`.
 
 ### Enums & helper types
-- **`ResourceStatus`** (`ResourceBase.cs:560`): `New, Updated, TicketCreated, Processing, Complete, Failed, Blocked, WaitingForApproval, DeProvisioning, DeProvisioned, DeprovisionInitiated, DeprovisionFailed`.
+- **`ResourceStatus`** (`ResourceBase.cs:661`): `New, Updated, TicketCreated, Processing, Complete, Failed, Blocked, WaitingForApproval, DeProvisioning, DeProvisioned, DeprovisionInitiated, DeprovisionFailed`.
 - **`ProvisioningMode`** (`ProvisioningMode.cs`): `Passthrough, Worker, HelpdeskAgent`.
 - **`ResourceMode`**: `Create, Import`.
 - **`TicketContext`** (`ResourceBase.cs:487`): `string? TicketId`, `DateTime? LastTriggeredTime`, `string? DetailedStatus`.
-- **`ResourceStatusUpdate`** (`ResourceBase.cs:449`): the `POST {id}/status` body — `Status`, `SubStatus`, `BlockedReason`, `Warnings`, `Faults`.
+- **`ResourceStatusUpdate`** (`ResourceBase.cs:550`): the `POST {id}/status` body — `Status`, `SubStatus`, `BlockedReason`, `Warnings`, `Faults`.
 - **`WorkerState`** (`WorkerState.cs`): `RetryCount`, `LastAttemptAt`, `NextAttemptAt`, `LastVerifiedAt`, `LastFailedCode`.
 
 > **DevOps / ResourceGroup-scoped variants** (in `Duplo.Ai.Model.DevOps`, used by first-party env-child
@@ -166,7 +161,7 @@ base does the heavy lifting (most extensions override nothing and get agent-base
 | `OnAfterResultUpdateAsync(entity, ct)` | React to results (e.g. create dependent resources). |
 | `EnrichResultAsync(entity, ct)` | Runs on `GetByIdAsync` — inject **live, non-persisted** data (cloud detail). |
 | `GetExpandedSpecForAgentAsync(resource, ct)` | The spec JSON written to `shared/<subtype>.json` for the agent; override to enrich. |
-| `bool AutoDeleteOnDeProvision(entity)` | Hard-delete the row on `DeProvisioned`? (default: true for non-Worker.) |
+| `bool AutoDeleteOnDeProvision(entity)` | Hard-delete the row on `DeProvisioned`? Default `true` for Agent + Passthrough, `false` for Worker (the worker deletes its own row) — [11](11-deprovisioning.md). |
 
 **Deprovision / reconcile / faults (`public virtual`):** `ValidateCanDeprovisionAsync`, `DeprovisionAsync`,
 `ForceReconcileAsync` (Worker), `CreateTicketAsync`, `ReconcileAndRaiseFaults(IFaultStore, ct)`.
@@ -176,7 +171,8 @@ base does the heavy lifting (most extensions override nothing and get agent-base
 
 ## 3. Controllers (`Duplo.Ai.DataManagement/.../Controllers/`)
 
-Subclass and add only the `[Route]`. Endpoints are inherited — you write **no** CRUD code.
+Subclass and add the `[Route]` plus the access-node declaration ([18](18-access-control.md)). Endpoints are
+inherited — you write **no** CRUD code.
 
 ### `ResourcesController<T,TSpec,TResult>` (`User/Resource/ResourcesController.cs`)
 `[Route("v1/aiservicedesk/user/data/workspaces/{workspaceId}/environment/[controller]")]`
@@ -194,24 +190,33 @@ Ctor: `(IEntityService<T> service, ILogger<MyController> logger)`. Endpoints:
 | `GET {id}/can-deprovision` | Pre-check. |
 | `POST {id}/deprovision` | Start deprovision (mode-dependent). |
 | `POST {id}/reconcile` | Worker-mode force reconcile. |
-| `POST {id}/ticket` · `GET {id}/ticket-status` | Manual ticket create / status. |
-| `GET view-template` | Serves the resource's view-template JSON (see [05-custom-actions.md](05-custom-actions.md)). |
+| `POST {id}/ticket` · `GET {id}/ticket-status` | Manual ticket create / status (the backend path for on-demand tickets — see [16-ask-ai](16-ask-ai.md) §9). |
+| `GET view-template` | Platform endpoint for legacy declarative view-templates — **unused by dev-kit views** (see [09-result-templates.md](09-result-templates.md)). |
 
 > `GenericServiceController<T>` is the non-resource base (CRUD + `bulk`, `{id}/soft-delete`,
 > `{id}/metadata`). `ResourcesController` derives from it.
+
+> **Access control comes with the base.** `GenericServiceController<T>` carries a property-less
+> `[AccessControl]` (attaches the enforcement filter, declares nothing) and `[AccessControl(List = true)]`
+> on `GetAll`, so your list endpoint is filtered **inside the Mongo query** with `totalCount` and paging
+> intact. `ResourcesController` also overrides the verb where the HTTP method misleads —
+> `POST {id}/deprovision` enforces as DELETE, `status`/`results`/`reconcile` as PUT. You only add the
+> class-level node declaration; the rest is inherited ([18-access-control](18-access-control.md)).
 
 ### `ChildResourceController<TChild,TParent,TSpec,TResult>` (`User/Resource/ChildResourceController.cs`)
 For resources nested under a parent. Ctor adds `IEntityService<TParent> parentService`. Declare your own
 `[HttpPost("~/…/{parentId}/[controller]")]` action and call the protected
 `CreateUnderParentAsync(parentId, child, ct)` (validates the parent, stamps `ParentId`).
 
-### `ResourceGroupControllerRef<T,TSpec,TResult>` (DevOps; for RG-scoped resources)
-Routes nested under `…/environments/{envId}/resource-groups/{rgId}/[controller]`; stamps
-`EnvironmentId`/`ResourceGroupId`. Use only for env-child resources.
+### `ResourceGroupControllerRef<T,TSpec,TResult>` (host-internal — not in the SDK feed)
+The first-party base for RG-scoped resources: routes nested under
+`…/environments/{envId}/resource-groups/{rgId}/[controller]`, stamping `EnvironmentId`/`ResourceGroupId`. It
+lives in the DevOps assemblies, which the extension SDK feed does not ship — an extension cannot subclass it
+([02](02-authoring-guide.md#resource-group-scoped-env-child-resources)).
 
 ---
 
-## Minimal typed resource (what a extension ships)
+## Minimal typed resource (what an extension ships)
 ```csharp
 [BsonIgnoreExtraElements]   // on every concrete Spec/Result/entity — see the rule above
 public class HelloWorldSpec   : BaseSpec   { public string? FirstName { get; set; } public string? LastName { get; set; } }
@@ -231,7 +236,8 @@ public class HelloWorldService : ResourceServiceBase<HelloWorld, HelloWorldSpec,
 }
 
 [ApiController]
-[Route("v1/aiservicedesk/user/data/workspaces/{workspaceId}/environment/helloworlds")]
+[Route("v1/aiservicedesk/user/data/workspaces/{workspaceId}/environment/extensions/helloworlds")]
+[AccessControl(Parent = typeof(Workspace), ParentIdProperty = "OwnerWorkspaceId")]   // access node — see 18-access-control.md
 public class HelloWorldsController : ResourcesController<HelloWorld, HelloWorldSpec, HelloWorldResult> {
     public HelloWorldsController(IEntityService<HelloWorld> svc, ILogger<HelloWorldsController> log) : base(svc, log) { }
 }

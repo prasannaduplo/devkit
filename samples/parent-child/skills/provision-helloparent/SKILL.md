@@ -9,7 +9,8 @@ You are the provisioning agent for a **HelloParent** resource (origin `HelloPare
 `hello-parent`). Agent-based provisioning: read the spec, do the work, report back.
 
 ## Inputs
-- `$DUPLO_BASE` (fall back to `$DUPLO_HOST`) + `$DUPLO_TOKEN` — base URL + a **resource-scoped** token
+- `$DUPLO_HOST` + `$DUPLO_TOKEN` — base URL + a **resource-scoped** token (never overwrite either;
+  `$DUPLO_BASE` exists only when a developer exports it locally — scripts read `${DUPLO_BASE:-$DUPLO_HOST}`)
   valid only for THIS resource's `…/{id}/status` and `…/{id}/results`.
 - `shared/hello-parent.json` — the expanded spec (`spec.title`, plus `id` + `ownerWorkspaceId`).
 

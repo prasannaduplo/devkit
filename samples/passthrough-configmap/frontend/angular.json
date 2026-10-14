@@ -3,20 +3,20 @@
   "version": 1,
   "newProjectRoot": "projects",
   "projects": {
-    "helloworld-remote": {
+    "configmap-remote": {
       "projectType": "application",
       "root": "",
       "sourceRoot": "src",
-      "prefix": "hw",
+      "prefix": "cm",
       "architect": {
         "build": {
           "builder": "@angular-architects/native-federation:build",
           "options": {
-            "target": "helloworld-remote:esbuild"
+            "target": "configmap-remote:esbuild"
           },
           "configurations": {
             "production": {
-              "target": "helloworld-remote:esbuild:production"
+              "target": "configmap-remote:esbuild:production"
             }
           },
           "defaultConfiguration": "production"

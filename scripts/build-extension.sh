@@ -24,6 +24,8 @@ DIR="${DIR%/}"
 source "$(dirname "$0")/_target.sh"   # → BASE_URL (+ TOKEN) from .env / env per DUPLO_TARGET
 # shellcheck source=scripts/_builder.sh
 source "$(dirname "$0")/_builder.sh"  # → native, or re-launch this build in the builder container
+# shellcheck source=scripts/_sdk_digest.sh
+source "$(dirname "$0")/_sdk_digest.sh"  # → sdk_digest, stamped into the bundle manifest beside sdkVersion
 BASE_URL="${BASE_URL%/}"               # tolerate a trailing slash in DUPLO_HOST (avoids // in URLs)
 [ -f "$DIR/manifest.json" ] || { echo "No manifest.json in $DIR" >&2; exit 1; }
 
@@ -133,14 +135,18 @@ echo "==> Fetching SDK feed from $BASE_URL"
 auth=()
 [ -n "${TOKEN:-}" ] && auth=(-H "Authorization: Bearer $TOKEN")
 # Capture the response first (don't pipe straight to jq) so a non-JSON body yields a clear error, not a
-# cryptic "jq: parse error". -L follows http→https redirects.
-SDK_RESP=$(curl -fsSL -m 30 "${auth[@]}" "$BASE_URL/v1/aiservicedesk/extensions/sdk-version" 2>/dev/null || true)
+# cryptic "jq: parse error". No -f: an HTTP error's body + status are the diagnostic, keep them.
+# -L follows http→https redirects.
+SDK_CODE=$(curl -sSL -m 30 -o /tmp/sdk-version-resp.$$ -w '%{http_code}' "${auth[@]}" \
+  "$BASE_URL/v1/aiservicedesk/extensions/sdk-version" 2>/dev/null || echo 000)
+SDK_RESP=$(cat /tmp/sdk-version-resp.$$ 2>/dev/null || true); rm -f /tmp/sdk-version-resp.$$
 SDK_VER=$(printf '%s' "$SDK_RESP" | jq -r '.version // empty' 2>/dev/null || true)
 if [ -z "$SDK_VER" ]; then
   echo "ERROR: could not read the host SDK version from $BASE_URL/v1/aiservicedesk/extensions/sdk-version" >&2
-  echo "       Response (first 300 chars): $(printf '%s' "$SDK_RESP" | tr -d '\r' | head -c 300)" >&2
-  echo "       Check DUPLO_HOST is the AI Helpdesk studio base URL (serving /v1/aiservicedesk), is reachable" >&2
-  echo "       from CI, uses https, and has no trailing path." >&2
+  echo "       HTTP $SDK_CODE — response (first 300 chars): $(printf '%s' "$SDK_RESP" | tr -d '\r' | head -c 300)" >&2
+  echo "       Check DUPLO_HOST is the AI Helpdesk studio base URL (serving /v1/aiservicedesk), is reachable," >&2
+  echo "       has no trailing path — and that TOKEN is set: in a platform ticket that means DUPLO_TOKEN in the" >&2
+  echo "       env plus DUPLO_TARGET=remote (auto-detected when DUPLO_HOST+DUPLO_TOKEN are both set)." >&2
   exit 1
 fi
 echo "    host SDK version: $SDK_VER"
@@ -149,7 +155,13 @@ curl -fsSL -m 120 "${auth[@]}" "$BASE_URL/v1/aiservicedesk/extensions/sdk-bundle
   || { echo "ERROR: failed to download the SDK bundle from $BASE_URL/v1/aiservicedesk/extensions/sdk-bundle" >&2; exit 1; }
 unzip -oq "$DIR/dist-sdk.zip" -d "$DIR/backend/sdk-packages" \
   || { echo "ERROR: SDK bundle is not a valid zip — got $(file -b "$DIR/dist-sdk.zip" 2>/dev/null). Check DUPLO_HOST." >&2; exit 1; }
-rm -f "$DIR/dist-sdk.zip"
+# Digest a fresh extraction, not sdk-packages/: that directory accumulates packages from earlier builds, and the
+# digest must describe only the SDK this build compiled against. See scripts/_sdk_digest.sh for the definition.
+SDK_FEED="$(mktemp -d)"
+unzip -oq "$DIR/dist-sdk.zip" -d "$SDK_FEED"
+SDK_DIGEST="$(sdk_digest "$SDK_FEED")" || { rm -rf "$SDK_FEED"; echo "ERROR: the SDK bundle from $BASE_URL is empty." >&2; exit 1; }
+rm -rf "$SDK_FEED" "$DIR/dist-sdk.zip"
+echo "    host SDK digest: $SDK_DIGEST"
 
 CSPROJ=$(find "$DIR/backend" -maxdepth 1 -name '*.csproj' | head -1)
 [ -n "$CSPROJ" ] || { echo "No .csproj under $DIR/backend" >&2; exit 1; }
@@ -169,7 +181,13 @@ echo "==> Building frontend"
 # at time of writing), the frontend's package.json pins it with an `overrides` block rather than
 # loosening the whole install. If a new conflict appears, add an override; do not restore the
 # legacy peer-deps flag.
-( cd "$DIR/frontend" && npm install && npm run build )
+# npm ci when a lock exists (deterministic — the committed lock is what makes the strict install
+# reproducible); plain npm install only as the no-lock fallback. NEVER delete package-lock.json.
+( cd "$DIR/frontend" \
+  && if [ -f package-lock.json ]; then npm ci; else npm install; fi \
+  && npm run build )
+# (if/else, NOT `npm ci || npm install`: a FAILING npm ci must fail the build, never silently fall back
+#  to npm install and rewrite the lock.)
 
 # The extension is hot-loaded into a child AssemblyLoadContext whose Resolving hook serves any assembly the
 # host already has (the WHOLE SDK closure — Duplo.Ai.*, Mongo, AWS, AspNetCore, …) from the host's Default
@@ -204,8 +222,8 @@ echo "    host provides $(wc -l < "$PROVIDED" | tr -d ' ') assemblies (excluded 
 echo "==> Assembling bundle"
 PKG="$DIR/dist/pkg"
 rm -rf "$PKG"; mkdir -p "$PKG/backend" "$PKG/fe" "$PKG/skills"
-# Bundle manifest with the real host SDK version pinned in.
-jq --arg v "$SDK_VER" '.sdkVersion = $v' "$DIR/manifest.json" > "$PKG/manifest.json"
+# Bundle manifest with the real host SDK version pinned in, and the digest of the SDK feed it was compiled against.
+jq --arg v "$SDK_VER" --arg d "$SDK_DIGEST" '.sdkVersion = $v | .sdkDigest = $d' "$DIR/manifest.json" > "$PKG/manifest.json"
 # Ship only backend assemblies the host does NOT already provide, plus each kept DLL's sidecars. Native
 # runtimes/ are host-provided too (Mongo/AWS natives load via the host's Default-ALC copies), so skip them.
 kept=0; dropped=0
@@ -232,9 +250,10 @@ if [ -d "$PKG/backend/runtimes" ]; then
 fi
 cp -r "$DIR/frontend/dist/." "$PKG/fe/"
 [ -d "$DIR/skills" ] && cp -r "$DIR/skills/." "$PKG/skills/"
-# Declarative Result view-templates (optional). Ship at the bundle root so the loader's
-# RegisterViewTemplatesRoot registers {Type}/{subType}.view-template.json and the inherited
-# GET …/view-template endpoint serves them (otherwise that endpoint 404s and the FE only has its
+# LEGACY: declarative Result view-templates are not supported (reference/09-result-templates.md); an older
+# extension may still carry a resources-frontend-templates/ dir, so keep copying it to the bundle root where the loader's
+# RegisterViewTemplatesRoot registers {Type}/{subType}.view-template.json for the inherited
+# GET …/view-template endpoint (otherwise that endpoint 404s and the FE only has its
 # local fallback). See reference/09-result-templates.md.
 [ -d "$DIR/resources-frontend-templates" ] && cp -r "$DIR/resources-frontend-templates" "$PKG/resources-frontend-templates"
 # Replace, don't append — `zip` updates in place, so a stale archive from a prior build keeps entries no

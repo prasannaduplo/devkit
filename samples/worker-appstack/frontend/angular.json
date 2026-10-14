@@ -3,20 +3,20 @@
   "version": 1,
   "newProjectRoot": "projects",
   "projects": {
-    "helloworld-remote": {
+    "appstack-remote": {
       "projectType": "application",
       "root": "",
       "sourceRoot": "src",
-      "prefix": "hw",
+      "prefix": "as",
       "architect": {
         "build": {
           "builder": "@angular-architects/native-federation:build",
           "options": {
-            "target": "helloworld-remote:esbuild"
+            "target": "appstack-remote:esbuild"
           },
           "configurations": {
             "production": {
-              "target": "helloworld-remote:esbuild:production"
+              "target": "appstack-remote:esbuild:production"
             }
           },
           "defaultConfiguration": "production"

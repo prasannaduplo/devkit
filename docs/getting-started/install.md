@@ -135,7 +135,6 @@ already set, so a second run is silent.
 | `Select LLM provider:` → `Enter 1 or 2:` | `1` for `anthropic (API key)`, `2` for `bedrock (AWS keys)`. On an EC2 instance with a working Bedrock role, option `3` uses that role with no keys. |
 | `Anthropic API key:` *(provider 1)* | Your `sk-ant-…` key. Not echoed. |
 | `AWS access key id:` / `AWS secret access key:` *(provider 2)* | Your Bedrock credentials. |
-| `Opt out of usage metrics? [y/N]:` | Enter keeps you opted **in**. `y` opts out. |
 
 The provider menu prints exactly this:
 
@@ -149,17 +148,6 @@ Enter 1 or 2: 1
 On an EC2 instance with a working role, the menu also prints
 `3) bedrock via this EC2 instance role — <role> @ <region>, no keys` and the prompt becomes
 `Enter 1, 2 or 3:`.
-
-The metrics question is last, on purpose:
-
-```
-DuploCloud collects product usage metrics from this dev kit.
-Opt out of usage metrics? [y/N]:
-```
-
-What is and is not collected is spelled out in [PRIVACY.md](../../PRIVACY.md). You can change your mind
-afterwards — set `DUPLO_USAGE_METRICS` to `0` or `1`, re-run `./run.sh`, and reload the UI tab. See
-[configuration.md](../configuration.md#usage-metrics).
 
 Every `./run.sh` flag is in the [CLI reference](../cli-reference.md#runsh).
 
@@ -177,9 +165,7 @@ You are done when you see:
   API       http://localhost:60031
   Workspace extension-dev  (68d1f0c2a4b95e0c3d7e1a42)  ·  agent registered + attached
   Token     DUPLO_ADMIN_TOKEN set in .env (permanent)
-  LLM       System default → claude-sonnet-4-6 (direct Anthropic)
-  Metrics   on (opted in)
-            change: set DUPLO_USAGE_METRICS=0|1 in .env, re-run ./run.sh, reload the UI tab  ·  see PRIVACY.md
+  LLM       System default → claude-sonnet-5 (direct Anthropic); also available: claude-opus-5
 
 Build & deploy your extension (scripts read the target from .env — no DUPLO_BASE= prefix needed):
   ./scripts/build-extension.sh  extensions/<name>               # your extensions live in extensions/<name>/

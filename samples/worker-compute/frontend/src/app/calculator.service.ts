@@ -1,6 +1,6 @@
-import { Injectable, Inject } from '@angular/core';
-import { Observable, of } from 'rxjs';
-import { catchError, map } from 'rxjs/operators';
+import { Injectable, inject } from '@angular/core';
+import { Observable } from 'rxjs';
+import { map } from 'rxjs/operators';
 
 export const REMOTE_DuploHttpClient = 'REMOTE_DuploHttpClient';
 export const REMOTE_UserSession = 'REMOTE_UserSession';
@@ -14,22 +14,35 @@ export interface CalculatorSpec {
   b?: number;
 }
 
+/** Reconcile bookkeeping the worker pipeline stamps on the entity (ResourceBase.WorkerState). */
+export interface WorkerState {
+  retryCount?: number;
+  lastAttemptAt?: string;
+  nextAttemptAt?: string;
+  lastVerifiedAt?: string;
+  lastFailedCode?: string;
+}
+
+// Lifecycle fields every ResourceBase serializes — the detail view's phase timeline reads them. A WORKER
+// resource has no ticket and no blockedReason; its progress is status + subStatus + workerState.
 export interface Calculator {
   id: string;
   name: string;
   status: string;
   subStatus?: string;
+  faults?: string[];
   createdAt?: string;
+  updatedAt?: string;
+  workerState?: WorkerState;
   spec?: CalculatorSpec;
   result?: { sum?: number; product?: number };
 }
 
 @Injectable({ providedIn: 'root' })
 export class CalculatorService {
-  constructor(
-    @Inject(REMOTE_DuploHttpClient) private http: any,
-    @Inject(REMOTE_UserSession) private session: any,
-  ) {}
+  // inject() with the platform's string DI tokens (use-ng22 rule — no constructor parameters).
+  private readonly http = inject<any>(REMOTE_DuploHttpClient as any);
+  private readonly session = inject<any>(REMOTE_UserSession as any);
 
   workspaceId(): string {
     return this.session?.tenant?.TenantId ?? '';
@@ -57,18 +70,11 @@ export class CalculatorService {
     return this.http.post(this.base(), body).pipe(map((r: any) => this.unwrap(r)));
   }
 
-  // Name of the provisioning ticket that created this resource (null when none is linked).
-  ticketName(id: string): Observable<string | null> {
-    const url = `/v1/aiservicedesk/tickets/${this.workspaceId()}/origin-context`
-      + `?type=${ORIGIN_TYPE}&id=${id}&subType=${SUB_TYPE}`;
-    return this.http.get(url).pipe(map((r: any) => this.unwrap(r)?.name ?? null));
-  }
-
-  getViewTemplate(type: string = ORIGIN_TYPE, subType: string = SUB_TYPE): Observable<any | null> {
-    const q = `type=${encodeURIComponent(type)}&subType=${encodeURIComponent(subType)}`;
-    return this.http.get(`${this.base()}/view-template?${q}`).pipe(
-      map((r: any) => this.unwrap(r) ?? null),
-      catchError(() => of(null)),
-    );
+  // Edit = `PATCH {id}` with the FULL spec: PATCH merges top-level entity fields (TicketContext/Status/
+  // Result preserved) but `spec` is replaced WHOLESALE — never send a partial spec, never echo `result`,
+  // never PUT (PUT binds the whole entity and nulls TicketContext). A spec change is exactly what
+  // re-ticks the background worker (SpecVersion changes → the worker re-applies).
+  update(id: string, spec: CalculatorSpec): Observable<Calculator> {
+    return this.http.patch(`${this.base()}/${id}`, { spec }).pipe(map((r: any) => this.unwrap(r)));
   }
 }

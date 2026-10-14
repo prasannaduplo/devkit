@@ -13,7 +13,7 @@ Legend: **✅ use** · **⚠️ allowed, with a caveat** · **❌ do not use her
 ### 1.1 Standalone is the default ✅
 Angular 19 flipped `standalone` to `true` for `@Component`, `@Directive` and `@Pipe`. Do not write
 `standalone: true` — it is noise. Only write `standalone: false` when a component is genuinely declared in
-a surviving NgModule (in the dev-kit, only the vendored `result-template/`).
+a surviving NgModule (an unmigrated Angular-15 extension — see the migration skill); no dev-kit sample has one.
 
 ```ts
 @Component({ selector: 'xx-list', imports: [SearchableDatatableModule], template: `…` })
@@ -29,7 +29,7 @@ Which lib module gives you what:
 |---|---|
 | `searchable-datatable`, `ngx-datatable-column`, `ngbDropdown*` | `SearchableDatatableModule` (re-exports `NgbModule` + `NgxDatatableModule`) |
 | `form-field`, `validation-state`, `validation-errors`, `form-group-errors`, `FormsModule` | `SharedFormsModule` |
-| `view-with-sidecards`, `view-header-card`, `sidecard`, `app-flat-status-filter`, `CommonModule`, `NgbModule` | `CommonLibComponentsModule` |
+| `scrollable-nav-tab`, `ngbNav`, `ngbDropdown`, `CommonModule`, `NgbModule` (the detail shell itself is raw Template-G markup — `duplo-extension-dev/reference/19-detail-page.md`) | `CommonLibComponentsModule` |
 
 > **Attribute directives fail silently.** A missing component import is `NG0304 unknown element`, but a
 > missing *directive* import just… does nothing. `ngbDropdown` with no `NgbModule` renders a dead button
@@ -282,7 +282,7 @@ the `Field` directive are all exported, and only `provideExperimentalWebMcpForms
 The reason to decline them is not maturity, it is the platform: `form-field`, `validation-state`,
 `validation-errors`, `form-group-errors` and `[notExists]` are all built on `NgModel`. Signal Forms replace
 `NgModel` wholesale, so adopting them means giving up every platform form widget and hand-rolling markup
-that no longer matches the suite. Revisit when `ng-common-lib` ships a signal-forms binding.
+that does not match the suite. Revisit when `ng-common-lib` ships a signal-forms binding.
 
 ### 8.4 Reactive forms ⚠️
 `ReactiveFormsModule` is re-exported by `SharedFormsModule` and works. Angular prefers it over

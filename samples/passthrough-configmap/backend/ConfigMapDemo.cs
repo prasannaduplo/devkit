@@ -31,6 +31,7 @@ public class ConfigMapResult : BaseResult
 }
 
 [BsonCollection("extension_configmapdemos")]
+[BsonIgnoreExtraElements]
 public class ConfigMapDemo : ResourceBase<ConfigMapSpec, ConfigMapResult>
 {
     public override string GetTicketOriginType() => "ConfigMapDemo";
@@ -62,7 +63,9 @@ public class ConfigMapService : ResourceServiceBase<ConfigMapDemo, ConfigMapSpec
     // create
     protected override async Task ProvisionDirectAsync(ConfigMapDemo e, CancellationToken ct)
     {
-        var (client, ns) = await ClientAndNamespaceAsync(e, ct);
+        // The SDK builds a fresh client per call — dispose it when done (SDK contract).
+        using var client = await ClientAsync(e, ct);
+        var ns = Ns(e);
         var body = new V1ConfigMap
         {
             Metadata = new V1ObjectMeta { Name = e.Name, NamespaceProperty = ns },
@@ -76,7 +79,8 @@ public class ConfigMapService : ResourceServiceBase<ConfigMapDemo, ConfigMapSpec
     // update (re-apply)
     protected override async Task UpdateDirectAsync(ConfigMapDemo e, CancellationToken ct)
     {
-        var (client, ns) = await ClientAndNamespaceAsync(e, ct);
+        using var client = await ClientAsync(e, ct);
+        var ns = Ns(e);
         var body = new V1ConfigMap
         {
             Metadata = new V1ObjectMeta { Name = e.Name, NamespaceProperty = ns },
@@ -88,14 +92,17 @@ public class ConfigMapService : ResourceServiceBase<ConfigMapDemo, ConfigMapSpec
     // delete the external object
     protected override async Task DeprovisionDirectAsync(ConfigMapDemo e, CancellationToken ct)
     {
-        var (client, ns) = await ClientAndNamespaceAsync(e, ct);
-        await client.CoreV1.DeleteNamespacedConfigMapAsync(e.Name, ns, cancellationToken: ct);
+        using var client = await ClientAsync(e, ct);
+        await client.CoreV1.DeleteNamespacedConfigMapAsync(e.Name, Ns(e), cancellationToken: ct);
     }
 
-    private async Task<(IKubernetes client, string ns)> ClientAndNamespaceAsync(ConfigMapDemo e, CancellationToken ct)
+    private static string Ns(ConfigMapDemo e) => e.Spec?.Namespace ?? "default";
+
+    /// <summary>Fresh client per operation — caller owns it: dispose when done (SDK contract).</summary>
+    private async Task<IKubernetes> ClientAsync(ConfigMapDemo e, CancellationToken ct)
     {
         var k8s = await _clients.GetKubernetesClientAsync(e.Spec?.ScopeIds ?? new List<string>(), ct);
         if (k8s is null) throw new ArgumentException("Attach a kubernetes scope to this resource.");
-        return (k8s.Value.Client, e.Spec?.Namespace ?? "default");
+        return k8s.Value.Client;
     }
 }

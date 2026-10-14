@@ -58,10 +58,11 @@ keys are needed.
 | --- | --- | --- |
 | **Anthropic** (simplest) | An API key, `sk-ant-…` | `ANTHROPIC_API_KEY` |
 | **AWS Bedrock** | `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY` (+ `AWS_SESSION_TOKEN` if they are temporary), and a region with Claude enabled | `AWS_*` |
+| **LLM gateway** (OpenRouter, Bifrost, LiteLLM, Snowflake Cortex, …) | The gateway's base URL, its API key / token if it needs one, and the model name as the gateway lists it | `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_MODEL` |
 
-Those two are the choices in `./run.sh`'s menu. Azure AI Foundry also works, but is configured by hand in
+Those three are the choices in `./run.sh`'s menu. Azure AI Foundry also works, but is configured by hand in
 `.env` rather than offered by the prompt. Precedence when more than one is set is
-`ANTHROPIC_API_KEY` → Azure → Bedrock — see
+`ANTHROPIC_API_KEY` → gateway → Azure → Bedrock — see
 [configuration.md](../configuration.md#llm-provider).
 
 ## 0.4 An email address you can read

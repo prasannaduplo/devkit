@@ -1,6 +1,6 @@
-import { Injectable, Inject } from '@angular/core';
-import { Observable, of } from 'rxjs';
-import { catchError, map } from 'rxjs/operators';
+import { Injectable, inject } from '@angular/core';
+import { Observable } from 'rxjs';
+import { map } from 'rxjs/operators';
 
 // Host-provided string DI tokens (no @common-lib import). REMOTE_DuploHttpClient exposes get/post
 // returning RxJS Observables; REMOTE_UserSession carries the current tenant (.tenant.TenantId) —
@@ -18,24 +18,29 @@ const REST_SEGMENT = 'extensions/helloworlds';
 // `…/environment/${REST_SEGMENT}`, so omitting the `extensions/` prefix makes every data call 404. See
 // reference/00-naming.md.
 
+// The lifecycle fields every ResourceBase serializes — the detail view's phase timeline reads them
+// (status → which phase is active; subStatus → its live beat; blockedReason → why the agent is waiting;
+// faults → the failure text; updatedAt → when the last phase finished). See reference/19-detail-page.md.
 export interface HelloWorld {
   id: string;
   name: string;
   status: string;
   subStatus?: string;
+  blockedReason?: string;
+  faults?: string[];
   createdAt?: string;
+  updatedAt?: string;
   spec?: { firstName?: string; lastName?: string };
   result?: { fullName?: string };
 }
 
 @Injectable({ providedIn: 'root' })
 export class HelloService {
-  constructor(
-    @Inject(REMOTE_DuploHttpClient) private http: any,
-    @Inject(REMOTE_UserSession) private session: any,
-  ) {}
+  // inject() with the platform's string DI tokens (use-ng22 rule — no constructor parameters).
+  private readonly http = inject<any>(REMOTE_DuploHttpClient as any);
+  private readonly session = inject<any>(REMOTE_UserSession as any);
 
-  /** Current workspace/tenant id — from the host UserSession (route params aren't reliable in a MF remote). */
+  /** Current workspace/tenant id — from the host UserSession (route params aren't reliable in a federated remote). */
   workspaceId(): string {
     return this.session?.tenant?.TenantId ?? '';
   }
@@ -44,7 +49,8 @@ export class HelloService {
     return `/v1/aiservicedesk/user/data/workspaces/${this.workspaceId()}/environment/${REST_SEGMENT}`;
   }
 
-  // The DuploHttpClient unwraps the API envelope to `data`; fall back defensively for either shape.
+  // DuploHttpClient does NOT unwrap the envelope: user/data endpoints return {data: …} while tickets/*
+  // return bare bodies — normalize both here.
   private unwrap = (r: any) => (r && r.data !== undefined ? r.data : r);
 
   list(): Observable<HelloWorld[]> {
@@ -63,8 +69,9 @@ export class HelloService {
     return this.http.post(this.base(), body).pipe(map((r: any) => this.unwrap(r)));
   }
 
-  // `PATCH {id}` merges onto the DB entity, so the existing ticket is reused. `PUT` would bind the whole
-  // entity from the body and null out TicketContext/Status/Result — see reference/04-hooks.md.
+  // `PATCH {id}` merges at the ENTITY level (TicketContext/Status preserved → the ticket is reused), but
+  // `spec` is replaced WHOLESALE — always send the FULL spec. `PUT` would bind the whole entity from the
+  // body and null out TicketContext/Status/Result — see reference/04-hooks.md.
   update(id: string, spec: { firstName: string; lastName: string }): Observable<HelloWorld> {
     return this.http.patch(`${this.base()}/${id}`, { spec }).pipe(map((r: any) => this.unwrap(r)));
   }
@@ -74,18 +81,5 @@ export class HelloService {
     const url = `/v1/aiservicedesk/tickets/${this.workspaceId()}/origin-context`
       + `?type=${ORIGIN_TYPE}&id=${id}&subType=${SUB_TYPE}`;
     return this.http.get(url).pipe(map((r: any) => this.unwrap(r)?.name ?? null));
-  }
-
-  /**
-   * Declarative Result view-template for this resource type (the inherited GET …/view-template endpoint;
-   * served from the `resources-frontend-templates/` we ship in the bundle — see 09-result-templates).
-   * Resolves to null when none is registered, so the view falls back to plain cards.
-   */
-  getViewTemplate(type: string = ORIGIN_TYPE, subType: string = SUB_TYPE): Observable<any | null> {
-    const q = `type=${encodeURIComponent(type)}&subType=${encodeURIComponent(subType)}`;
-    return this.http.get(`${this.base()}/view-template?${q}`).pipe(
-      map((r: any) => this.unwrap(r) ?? null),
-      catchError(() => of(null)),
-    );
   }
 }

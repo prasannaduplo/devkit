@@ -16,7 +16,12 @@ creation) and writes many files — approving each one is tedious. To avoid a st
    - **Spec** — a table of spec fields (name · type · required/optional) per resource.
    - **Result** — a table of result fields (name · type) per resource.
    - **User experience** — a short walkthrough: where it appears in the left-nav, the create/add form, the list
-     view, the detail view (Spec/Result panels + Track Provisioning Status), and what provisioning does end-to-end.
+     view, the detail page (Spec | Result, the Result tabs, and the **lifecycle phases** this resource goes through —
+     a small table of phase · driving status/result field; see `reference/19-detail-page.md`), and what
+     provisioning does end-to-end.
+   - **Access control** — where each resource sits in the permission tree (default: under the Workspace) and a
+     table of any named actions (id · endpoint · why it needs an explicit grant), or "default: workspace-scoped
+     CRUD, no named actions" (see `.claude/skills/duplo-extension-dev/reference/18-access-control.md`).
 
    Then list the files you'll create under `extensions/<name>/` and the exact build/deploy commands. In the
    `ExitPlanMode` call, declare the Bash permissions the build needs via `allowedPrompts` so the user approves the
@@ -86,9 +91,14 @@ Lead with the requirement and **listen** — do not interrogate with a checklist
   - duration
   - link to the console log
   ```
+- **Enumerate what already exists.** Before proposing anything, `ls extensions/*/manifest.json`. If extensions
+  already live here (a shared repo — other developers' work), let the requirement decide: MODIFY an existing
+  `extensions/<name>/` or scaffold a NEW `extensions/<name2>/`; ask when it's ambiguous. Before scaffolding new,
+  read a sibling extension to match its conventions.
 - **Then suggest a name.** From that description, propose a short, lowercase extension name (e.g. `widgets`,
-  `reports`) and say what it drives — the extension id, the resource type(s), and the MF remote name. Ask the user
-  to confirm or change it; do not ask for a name cold before hearing the requirement.
+  `reports`) and say what it drives — the extension id, the resource type(s), and the Native Federation remote name. Ask the user
+  to confirm or change it; do not ask for a name cold before hearing the requirement. In a shared repo the name —
+  and the frontend's federation remote `name` — must collide with no sibling extension.
 
 ## Step 3 — List the target's scopes, ask which to test with
 A scope carries the credentials the agent will use during provisioning. First settle the **workspace** to author
@@ -143,7 +153,12 @@ backend + Angular remote + provisioning skill) — never ask the user to choose 
 - **only if the requirement describes more than one related resource:** is it a flat set or a
   **parent → child** hierarchy? (drives `ParentRefSpec`/`ChildResourceController` + nested menu — see reference/08);
 - **custom actions / extra controller endpoints** consumed by the FE (logs, trigger, etc.);
+- **access control**: is "anyone granted the workspace may manage it" right (the default), or does the resource
+  sit under a parent / an extension category? Should any endpoint require an **explicitly granted named action**
+  rather than plain CRUD (restart, console/exec, credential-minting shapes — see reference/18-access-control.md)?
 - **menu** placement (a top-level `collapsible-section` with `item` children renders nested correctly);
+- **Ask AI** is opt-in: scaffold it ONLY if the user's requirement explicitly asks for AI chat sessions on the
+  resource — never offer it or add it unprompted (see skill reference 16-ask-ai);
 - for an external system: **auth** style (basic/bearer) and which API calls provisioning makes (a custom
   external HTTP API, etc.).
 

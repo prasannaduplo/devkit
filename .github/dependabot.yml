@@ -3,7 +3,7 @@
 # SCOPE: GitHub Actions only, deliberately. Both other ecosystems in this repo are excluded on
 # purpose, and the reasons are worth keeping so nobody "fixes" the omission later.
 #
-# npm is NOT enabled. Ten Angular lockfiles live here — nine under samples/ and one under
+# npm is NOT enabled. Several Angular lockfiles live here — one per sample under samples/ and one under
 # .claude/skills/duplo-extension-dev/templates/ — and they stay pinned on purpose: a sample has to
 # build against whatever Angular the host portal ships, so its lockfile tracks the host, not
 # upstream latest. On top of that, @duplocloud-internal/ng-common-lib is vendored as a `file:`

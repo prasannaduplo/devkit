@@ -48,7 +48,7 @@ done
 
 # Restore the per-sample identity. The Angular project key inside angular.json is derived from the
 # npm package name (duplo-extension-<x>-remote -> <x>-remote) so build/esbuild target refs stay valid.
-PROJECT_KEY="${PKG_NAME#duplo-extension-}"     # duplo-extension-form-complex-remote -> form-complex-remote
+PROJECT_KEY="${PKG_NAME#duplo-extension-}"     # duplo-extension-network-stack-remote -> network-stack-remote
 perl -pi -e "s/duploExtensionHelloworld/$REMOTE_NAME/g" "$FE/federation.config.js"
 perl -pi -e "s/helloworld-remote/$PROJECT_KEY/g" "$FE/angular.json"
 jq --arg n "$PKG_NAME" --arg d "$PKG_DESC" '.name = $n | .description = $d' \

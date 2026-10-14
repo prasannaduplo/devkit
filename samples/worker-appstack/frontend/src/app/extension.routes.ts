@@ -1,7 +1,7 @@
 import { Routes } from '@angular/router';
-import { ListHelloComponent } from './list/list-hello.component';
-import { AddHelloComponent } from './add/add-hello.component';
-import { ViewHelloComponent } from './view/view-hello.component';
+import { ListAppStackComponent } from './list/list-appstack.component';
+import { AddAppStackComponent } from './add/add-appstack.component';
+import { ViewAppStackComponent } from './view/view-appstack.component';
 
 // What the host lazy-loads (manifest frontend.remote.exposedModule = './Extension').
 //
@@ -10,7 +10,8 @@ import { ViewHelloComponent } from './view/view-hello.component';
 // The components are standalone and declare their own `imports`, so there is nothing left for a module
 // to do. THE EXPORTED CONST MUST STILL BE NAMED `Extension`.
 export const Extension: Routes = [
-  { path: '', component: ListHelloComponent },
-  { path: 'add', component: AddHelloComponent },
-  { path: 'view/:id', component: ViewHelloComponent },
+  { path: '', component: ListAppStackComponent },
+  { path: 'add', component: AddAppStackComponent },
+  { path: 'edit/:id', component: AddAppStackComponent },
+  { path: 'view/:id', component: ViewAppStackComponent },
 ];

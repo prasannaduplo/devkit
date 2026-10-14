@@ -17,16 +17,32 @@ POST …/environment/awsrdsinstances/{id}/stop
 POST …/environment/awsrdsinstances/{id}/reboot
 GET  …/environment/awsrdsinstances/engines        (catalog/helper reads)
 ```
-Pattern: the controller delegates to a service method that holds the AWS SDK client; cloud credentials
-come from the resource's scope. In a **extension**, declare the same on your controller:
+**MANDATORY pattern — the controller delegates to a service method; the SERVICE holds the SDK client and
+the credential machinery.** This is not style: a controller is activated from the extension's **child DI
+scope**, which holds your own services plus a fixed bridged set of host services (`ILogger<>`,
+`IConfiguration`, `IHttpContextAccessor`, `IHttpClientFactory`, `ITicketService`, `ILocalFileManager`,
+`IMongoDatabase`, `ISkillMappingService`, `IResourceProvisioningManager`) — those are fine to inject. What
+it does NOT get is the composite child→host provider your SERVICE is built through, so any host service
+outside that bridge — `IScopeCredentials`, `IScopeClientFactory`, `AwsHostOperations` — compiles and then
+fails at runtime with `Unable to resolve service …` (see [10-sdk-api](10-sdk-api.md) Gotchas). Keep
+cloud/credential work in the service.
+In an **extension**, declare the action on your controller and delegate. A lifecycle action like this
+should require an **explicitly granted named action** rather than plain CRUD — `ALL` verbs never implies
+one, so an admin must grant `<feature>.restart` deliberately ([18-access-control](18-access-control.md)):
 ```csharp
 [HttpPost("{id}/restart")]
+[AccessControl(Action = "acme.restart", Destructive = true,
+    ActionName = "Restart the service",
+    Description = "Stops and restarts the running service. In-flight work is dropped.")]
 public async Task<IActionResult> Restart(string workspaceId, string id, CancellationToken ct) {
     var entity = await ResourceServiceFacet.GetByIdAsync(id, ct) ?? /* 404 */;
-    // … call your cloud/SaaS client using credentials resolved from entity.Spec.ScopeIds …
-    return Ok(/* result */);
+    // Delegate: the SERVICE resolves credentials (IScopeCredentials) and calls the cloud/SaaS client.
+    return Ok(await _service.RestartAsync(entity, ct));
 }
 ```
+A **catalog read** like `GET …/engines` has no resource instance to authorize against, so it takes no
+action and no verb check — mark the intent explicitly with
+`[NoResourceAccessCheck(Reason = "Type-level catalog read; no resource instance to authorize against.")]`.
 
 ## 2. Live cloud detail on view — `EnrichResultAsync`
 
@@ -35,53 +51,49 @@ on your service — it runs inside `GetByIdAsync`, after the row is read, before
 state with the scope credentials and stamp it onto `entity.Result` (in-memory only). This is how a
 resource view shows fresh status without a write.
 
-For Kubernetes objects there's a higher-level pattern: `K8sPassthroughServiceBase<TResource,TSpec,TResult,TK8sObject>`
-(`Duplo.AI.DataManagement.DevOps/Services/K8sPassthroughServiceBase.cs`) applies the spec's manifest
-directly to the cluster and serves live detail from a source-data cache (no per-row API call). Use it as a
-model if your extension manages k8s objects.
+(The first-party `K8sPassthroughServiceBase<…>` — apply a manifest directly, serve live detail from a
+source-data cache — is host-internal and **not in the SDK feed**; an extension builds the same shape from
+`IScopeClientFactory.GetKubernetesClientAsync` — [10](10-sdk-api.md), worked in `samples/worker-appstack`.)
 
-## 3. Viewing logs / shell (Kubernetes)
+## 3. Pod logs (Kubernetes)
 
-The platform exposes pod logs as a **workspace + scope-scoped** endpoint:
+The platform exposes pod logs as a **workspace + scope-scoped** endpoint your remote can call directly:
 ```
 GET /v1/aiservicedesk/user/data/workspaces/{workspaceId}/scopes/{scopeId}/k8s/pods/{podName}/logs
 ```
-(`Duplo.Ai.DataManagement/.../Controllers/User/WorkspacesController.cs`). The UI renders it in an xterm
-log viewer: `kub-pod-logs.component.ts` (`ai-studio/src/app/resources/kubernetes/kub-pods/kub-pod-logs/`)
-calls `getPodLogs(podName)` (or an injected `podLogsLoader`) and polls while "follow" is on. Interactive
-shell (`kubectl exec`) attaches through the **xterm service** (`AIStudio:XtermHost`), which runs the exec
-and bridges the container's stdin/stdout to the browser.
+Resolve the workload's `scopeId` from the resource's `spec.scopeIds`, call the endpoint from your panel and
+render it (poll while following). Interactive shell is a host feature (the xterm service) with no extension API.
 
-For a extension that manages a workload: resolve the workload's `scopeId` (from the resource's scope), then
-either link to the existing logs viewer or call the logs endpoint from your remote and render it.
+## 4. Surfacing actions in the resource view
 
-## 4. Surfacing actions in the resource view (view-template menus)
+Actions live in your hand-written view ([19-detail-page](19-detail-page.md)), placed beside the data
+they act on:
 
-The generic resource view (`<app-resource-template-view>`) is driven by a **view-template JSON** served
-from `GET …/<restSegment>/view-template` (file:
-`resources/resources-frontend-templates/<Type>/<subType>.view-template.json`). Fields can declare menus:
+- **Resource-wide actions** (Plan / Apply, Restart, Refresh) — `btn btn-sm g-btn-ghost` buttons in the
+  page header's `.g-actions`, between the Spec | Result switcher and "Ask agent" (Template G's "Open in
+  AWS console" slot). `samples/network-stack` puts Plan and Apply there, with Apply disabled until
+  `result.applyAllowed`; the pending/in-flight state disables both and keeps the poll alive (its
+  `pendingDispatch()` / `runBusy()`). Never a heading or action bar above the tab strip.
+- **Per-row actions** (Logs, Exec on a pod) — a kebab or link in the table row inside the panel that
+  renders the collection; the panel calls your endpoint via the injected `REMOTE_DuploHttpClient`.
+- **Destructive lifecycle actions** (Deprovision / Delete) — the header's ⋮ dropdown, styled
+  `text-danger`, behind the platform `DeleteConfirmationModalService`.
+- **"Ask agent"** — the header's primary button in Agent mode; it opens the provisioning ticket. The
+  same handler backs "Track status" in the lifecycle rail.
 
-```jsonc
-// resources/resources-frontend-templates/AppService/kubernetes-app-service.view-template.json
-{ "key": "ov_deployment", "type": "single", "value": "result.deploymentName",
-  "cardMenus": [ { "id": "restart-deployment", "label": "Restart" } ] },
-{ "key": "ov_pods", "type": "table", "source": "result.pods",
-  "rowMenus": [ { "id": "logs", "label": "Logs" }, { "id": "kubectl-exec", "label": "Exec (kubectl)" } ] }
-```
-`field-renderer.component.ts` renders the kebab and emits a `MenuActionEvent`
-`{ menuId, level: 'row'|'card', fieldKey, row? }`; the view component dispatches on `(level, fieldKey,
-menuId)`. Reference: `view-app-service.component.ts` (`onMenuAction` → opens logs/exec, restarts a
-deployment). Ship your extension's `<subType>.view-template.json` with `cardMenus`/`rowMenus` and handle the
-events in your view to wire custom actions with **no host changes**.
+Each such button is a named-action or verb decision on the backend too — see
+[18-access-control](18-access-control.md).
 
 ## 5. Action buttons in your extension's Angular remote
 
 If your extension ships its own remote (list/add/view), add buttons in the view component that call your
 custom backend endpoints via the injected `REMOTE_DuploHttpClient`, or navigate with the shared host
-`Router`. (The hello-world remote's "Track Provisioning Status" button is a worked example: it resolves
+`Router`. (The hello-world remote's "Ask agent" / "Track status" handler is a worked example: it resolves
 the ticket name via the tickets origin-context endpoint and navigates to the service-desk chat.) Reach
 the host through the `REMOTE_*` string DI tokens; the remote's UI uses the platform library
-`@duplocloud-internal/ng-common-lib` (see [02-authoring-guide](02-authoring-guide.md#frontend-optional-but-recommended)).
+`@duplocloud-internal/ng-common-lib` (see [02-authoring-guide](02-authoring-guide.md#frontend)).
+If the user asks for on-demand chat sessions on a resource, don't invent a custom action — use the Ask AI
+pattern ([16-ask-ai](16-ask-ai.md)).
 
 ## 6. End-to-end: an extra controller API your remote consumes (the "view logs" pattern)
 
@@ -90,8 +102,11 @@ output, triggering an external action, reading live metrics. You add an endpoint
 it from **your** remote. App Services "view logs" is the canonical UX; here it is generalized for an extension.
 
 **Backend — add the action to your `ResourcesController<>` subclass.** It's auto-discovered as an
-ApplicationPart, so no host change. Enforce workspace ownership, return the standard `ApiResponse<T>` envelope,
-and map failures to status codes (model on `AWSRdsInstancesController.InvokeLifecycleAsync`).
+ApplicationPart, so no host change. Return the standard `ApiResponse<T>` envelope and map failures to
+status codes (model on `AWSRdsInstancesController.InvokeLifecycleAsync`). Tenancy is enforced by the
+access filter once the controller carries its node declaration ([18-access-control](18-access-control.md))
+— the filter resolves the resource's real workspace from stored refs and cross-checks the route — so the
+endpoint only needs input validation, not an ownership check.
 
 ```csharp
 public record ConsoleResponse(string Text, bool Building, int? NextStart);
@@ -100,7 +115,7 @@ public record ConsoleResponse(string Text, bool Building, int? NextStart);
 public async Task<IActionResult> Console(string workspaceId, string id,
         [FromQuery] int start = 0, CancellationToken ct = default) {
     var entity = await ResourceServiceFacet.GetByIdAsync(id, ct);
-    if (entity is null || entity.OwnerWorkspaceId != GetWorkspaceIdFromRoute()) return NotFound();
+    if (entity is null) return NotFound();   // tenancy already enforced by the access filter
     try {
         // call the external system using creds resolved from entity.Spec.ScopeIds (see 07-scope-credentials),
         // or read entity.Result for stored output.
@@ -149,8 +164,9 @@ When provisioning is a **repeatable, long-running operation** the user re-trigge
 destroy, a redeploy, a re-sync), model it as **one long-lived ticket per resource** that the agent reconciles
 on demand — not a fresh ticket per run.
 
-**Trigger — bump a spec field, don't create a ticket.** Add `POST {id}/actions`; it records the request on the
-spec and returns `202`. Use a **monotonic** timestamp so re-submitting the same verb still registers as a
+**Trigger — bump a spec field, don't create a ticket.** Add `POST {id}/actions` (the worked sample splits
+this into `POST {id}/plan` + `POST {id}/apply` so RBAC can gate them separately); it records the request on
+the spec and returns `202`. Use a **monotonic** timestamp so re-submitting the same verb still registers as a
 change:
 ```csharp
 entity.Spec.LastRequestedAction = new RequestedAction { Action = action, RequestedAt = DateTime.UtcNow };
@@ -169,7 +185,7 @@ var ts = scope.ServiceProvider.GetRequiredService<ITicketService>();
 var files = await ts.ListTicketFilesAsync(ticketId, "canvas-documents/plans", ct);   // + GetTicketFileAsync(...)
 ```
 Expose `GET {id}/plan-history | apply-history | plans/{runId} | applies/{runId}`. The remote lists runs and
-tails the selected log (poll while `meta.running`), rendering ANSI via an `ansiToHtml` pipe with a download
+tails the selected log (poll while `meta.running`), rendering ANSI via an `ansiStrip` pipe with a download
 button.
 
 **Idempotency + concurrency (agent skill).** Stamp the processed `requestedAt` to a file (e.g.
@@ -179,14 +195,14 @@ double-run; guard concurrent applies with a run-lock (`shared/.run-lock`).
 **Gotcha:** run history is keyed by `TicketContext.TicketId`, so if an edit spawns a *new* ticket (the PUT bug
 in [04-hooks](04-hooks.md)) the prior logs vanish from the UI even though they still exist under the old ticket.
 
-**References:** Terraform extension `TfStatesController`/`TfStateService` (`TriggerActionAsync`, canvas-file
-reads), the skill's `tf-dispatch.sh`/`tf-plan.sh`/`tf-apply.sh` (canvas meta+log, `.last-action-processed`
-stamp), and the FE `tf-execution-history-panel` (3s poll live tail).
+**Worked in-repo example:** [`samples/network-stack`](../../../../samples/network-stack) — `POST {id}/plan` +
+`POST {id}/apply` (split routes so RBAC can gate them separately; same stamp-the-spec mechanics), run
+history + log endpoints reading the ticket workdir, the skill's background terraform run with progressive
+status posts, and the Logs tab's live tail.
 
 ---
 
-**Summary:** lifecycle action → custom controller endpoint; live state → `EnrichResultAsync` (or
-`K8sPassthroughServiceBase`); logs/shell → the workspace/scope k8s endpoints + xterm; UI actions →
-view-template `cardMenus`/`rowMenus` + `MenuActionEvent`, or buttons in your remote; **any out-of-framework
-feature → your own `[HttpGet/Post]` endpoint + your remote calling it via `REMOTE_DuploHttpClient` (§6)**. All
-reuse existing platform machinery; none require host changes.
+**Summary:** lifecycle action → custom controller endpoint with a named access action; live state →
+`EnrichResultAsync`; logs → the workspace/scope k8s endpoint; UI actions → header ghost buttons or in-panel
+actions in your own view (§4); **any out-of-framework feature → your own `[HttpGet/Post]` endpoint + your remote
+calling it via `REMOTE_DuploHttpClient` (§6)**. All reuse existing platform machinery; none require host changes.

@@ -7,7 +7,11 @@
 # (e.g. DUPLO_TARGET is absent after `./run.sh --reset`, and is optional — it defaults to local below).
 _ENV_FILE="${DUPLO_ENV_FILE:-.env}"
 _envv() { grep -E "^$1=" "$_ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- || true; }
-_TARGET="${DUPLO_TARGET:-$(_envv DUPLO_TARGET)}"; _TARGET="${_TARGET:-local}"
+_TARGET="${DUPLO_TARGET:-$(_envv DUPLO_TARGET)}"
+# In-platform tickets export DUPLO_HOST + DUPLO_TOKEN (and no .env, no DUPLO_TARGET) — that pair IS the
+# remote target, so default to it. An explicit DUPLO_TARGET (env or .env) still wins.
+if [ -z "$_TARGET" ] && [ -n "${DUPLO_HOST:-}" ] && [ -n "${DUPLO_TOKEN:-}" ]; then _TARGET=remote; fi
+_TARGET="${_TARGET:-local}"
 if [ "$_TARGET" = remote ]; then
   BASE_URL="${DUPLO_BASE:-${DUPLO_HOST:-$(_envv DUPLO_HOST)}}"
   TOKEN="${DUPLO_TOKEN:-$(_envv DUPLO_TOKEN)}"

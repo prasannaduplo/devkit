@@ -26,15 +26,17 @@ The `form-group-errors` directive you already mount for client-side validation a
 Grab it and report the raw error — it unwraps via `extractErrorMessage` (which reads `errors` → `Message` →
 `message` → string) and renders the reason as the form's summary banner. This is the portal convention.
 ```ts
-import { Component, ViewChild } from '@angular/core';
+import { Component, signal, viewChild } from '@angular/core';
 import { FormGroupErrorsComponent } from '@duplocloud-internal/ng-common-lib';
 
-@ViewChild(FormGroupErrorsComponent) private formErrors?: FormGroupErrorsComponent;
+private readonly formErrors = viewChild(FormGroupErrorsComponent);   // a signal — call it
+protected readonly saving = signal(false);
 
 submit() {
-  this.svc.create(this.name, this.model).subscribe({
+  this.saving.set(true);
+  this.svc.create(this.name(), this.model).subscribe({
     next: () => this.router.navigate(['..'], { relativeTo: this.route }),
-    error: (err) => { this.saving = false; this.formErrors?.reportError(err); },
+    error: (err) => { this.saving.set(false); this.formErrors()?.reportError(err); },
   });
 }
 ```
@@ -49,12 +51,14 @@ directly to get the real string:
 import { extractErrorMessage } from '@duplocloud-internal/ng-common-lib';
 error: (err) => { this.saving = false; this.error = extractErrorMessage(err); }
 ```
-See `samples/form-wizard` / `samples/form-complex` (feeds `<duplo-wizard-stepper [error]>`).
+See `samples/network-stack`'s add wizard (feeds `<duplo-wizard-stepper [error]>`).
 
 ## Constraints / notes
 
-- **No cross-boundary toast.** The host exposes no `REMOTE_` alerts/toast token, so an extension remote can't raise
-  the host toast service. Report **inline** (form banner / wizard slot) — that works fully inside the remote.
+- **Toasts reach the host, but report form errors inline.** `ngx-toastr` is a shared singleton, so the lib's
+  `SharedAlertsService` shows the host's toast from a remote — the confirm dialogs and `app-code-block-with-copy`
+  do this on their own ([20-ui-library](20-ui-library.md#confirm-dialogs)). A failed create/update still goes
+  **inline** (form banner / wizard slot), beside the form the user has to fix. Never report one failure both ways.
 - **No field-level error map.** On create, `errors` is a single string, not a per-field dict — surface it as one
   message; don't expect to map it onto individual fields.
 - **Where the real message comes from:** e.g. the name-uniqueness check throws

@@ -1,13 +1,22 @@
 # 10 — SDK API reference: cloud access from extension C# (`Duplo.Ai.Studio.Extensibility.Infra`)
 
 This package ships in the SDK feed (`Duplocloud.AiHelpdesk.Sdk`) and is registered by the host, so your extension
-service/controller can **inject** these to read scope credentials and talk to live infrastructure (Kubernetes,
+**service or worker** can **inject** these to read scope credentials and talk to live infrastructure (Kubernetes,
 AWS, GitHub) from your own C# — exactly what `EnrichResultAsync`, passthrough provisioning, and custom actions need.
 Add no extra reference for it; it comes with the SDK. (For per-AWS-service calls, add the `AWSSDK.<Service>`
 package you use — see `CreateAwsClientAsync`.)
 
-> Namespace: `Duplo.Ai.Studio.Extensibility.Infra`. Inject `IScopeCredentials` and/or `IScopeClientFactory` via the
-> constructor. **Never log credential values** (`ResolvedScope.Data`, tokens).
+> Namespace: `Duplo.Ai.Studio.Extensibility.Infra`. `ProviderCategory` (and `Provider`/`Scope`) live in
+> `Duplo.Ai.Model` — add `using Duplo.Ai.Model;` next to `using Duplo.Ai.Studio.Extensibility.Infra;`.
+> Inject `IScopeCredentials` and/or `IScopeClientFactory` via the constructor of your **service/worker ONLY —
+> never a controller**: a hot-loaded controller is activated from the extension's CHILD scope (your own
+> services + a fixed bridged set: `ILogger<>`, `IConfiguration`, `IHttpContextAccessor`, `IHttpClientFactory`,
+> `ITicketService`, `ILocalFileManager`, `IMongoDatabase`, `ISkillMappingService`,
+> `IResourceProvisioningManager` — those inject fine), WITHOUT the composite child→root provider, so a host
+> service outside that bridge compiles clean and then fails at runtime with
+> `Unable to resolve service for type 'IScopeCredentials' while attempting to activate '<YourController>'`.
+> The controller injects your extension's own service and delegates (see [05-custom-actions](05-custom-actions.md)).
+> **Never log credential values** (`ResolvedScope.Data`, tokens).
 
 ---
 
@@ -33,7 +42,7 @@ scope, read its base URL + token from `Data`, call the API.
 ### `Task<ResolvedScope> RequireOfCategoryAsync(IEnumerable<string> scopeIds, ProviderCategory category, string notFoundMessage, CancellationToken ct = default)`
 - **Purpose:** as above but throws `ArgumentException` (→ HTTP 400) with your message when none is attached.
 - **When:** the scope is required to provision/enrich.
-- **Example (a custom "other" API):**
+- **Example (a custom "other" API — `ProviderCategory` needs `using Duplo.Ai.Model;`):**
   ```csharp
   var s = await _creds.RequireOfCategoryAsync(e.Spec.ScopeIds, ProviderCategory.other, "Attach the Jenkins scope.", ct);
   var baseUrl = s.Provider.AccountId;                 // by convention the base URL
@@ -88,12 +97,10 @@ Inject the singleton `AwsHostOperations`. Stateless; pass scope-resolved `AWSCre
 - `string? ResolveResourceRegion(JsonObject? tfState)` — derive a resource's region **from the resource itself** (ARN segment 3 → `availability_zone` → `region` attr), never from the scope (a scope spans regions; a cross-account assume-role lands elsewhere). Returns null when undeterminable → skip the live fetch.
 - `string? RegionFromArn(string? arn)`, `string ResolveStsRegion()` (`AWS_REGION` → `AWS_DEFAULT_REGION` → `us-east-1`).
 
-## `ICurrentUser` — the logged-in caller (from the request's JWT)
-Inject the singleton `ICurrentUser` to know who's acting. Read it inside a **request-scoped** call (controller action,
-hook, `EnrichResultAsync`); outside a request the strings are empty and `IsAuthenticated` is false.
-- `string Email` — the logged-in user's email (**== `Username`** in this platform).
-- `string Username`, `string OnBehalfOf`, `IReadOnlyList<string> Roles`, `bool IsAuthenticated`.
-See [13-current-user](13-current-user.md) for a full example (and the frontend + agent equivalents).
+## `ICurrentUser` — the logged-in caller
+A host singleton (`Email`, `Username`, `OnBehalfOf`, `Roles`, `IsAuthenticated`) that injects into your
+service/worker; read it inside a request-scoped call. Full treatment, with the frontend and agent equivalents:
+[13-current-user](13-current-user.md).
 
 ---
 
@@ -107,15 +114,14 @@ Full firing order + decision guidance: [04-hooks](04-hooks.md); deprovision: [11
 | `ProvisionDirectAsync` | `protected virtual Task ProvisionDirectAsync(TResource, CancellationToken)` | Passthrough create (no skill mapping → `ProvisionedMode==Passthrough`). |
 | `UpdateDirectAsync` | `protected virtual Task UpdateDirectAsync(TResource, CancellationToken)` | Passthrough update (re-apply). |
 | `DeprovisionDirectAsync` | `protected virtual Task DeprovisionDirectAsync(TResource, CancellationToken)` | Passthrough delete of the external object. |
-| `IsProvisioningNeeded` | `protected virtual bool IsProvisioningNeeded(TResource)` | Return `false` → create completes with no ticket (on-demand only). |
+| `IsProvisioningNeeded` | `protected virtual bool IsProvisioningNeeded(TResource)` | Return `false` → create completes with no provisioning ticket (on-demand only). |
 | `NoSkillsFallbackMode` | `protected virtual ProvisioningMode NoSkillsFallbackMode` | Return `Worker` to use the background worker instead of passthrough. |
 | `ValidateSpecAsync` | `protected virtual Task ValidateSpecAsync(...)` | Validate spec / required scope before persist. |
 | `AutoDeleteOnDeProvision` | `protected virtual bool AutoDeleteOnDeProvision(TResource?)` | `true` to hard-delete the row when it reaches `DeProvisioned`. Default: `true` for agent + passthrough, `false` for worker. |
 | `ValidateCanDeprovisionAsync` | `public virtual Task ValidateCanDeprovisionAsync(...)` | Block deprovision while children/dependents exist. |
 | worker `ApplyAsync` / `VerifyDriftAsync` / `DeleteSubResourcesAsync` / `WaitForDeletionAsync` | `protected abstract` on `ResourceWorkerBase<…>` | Worker mode: apply (dependency order), drift-check, delete (reverse), poll-until-gone. |
 
-See worked examples: `samples/enrichment-pods`, `samples/passthrough-configmap`, `samples/worker-appstack`,
-`samples/on-demand-plan`.
+See worked examples: `samples/network-stack`, `samples/passthrough-configmap`, `samples/worker-appstack`.
 
 ## Gotchas
 - **Kubernetes calls need `using k8s;`** and go through the grouped operations:
@@ -123,13 +129,21 @@ See worked examples: `samples/enrichment-pods`, `samples/passthrough-configmap`,
   `client.ListNamespacedPodAsync`.
 - **AWS:** add the `AWSSDK.<Service>` package you call (e.g. `AWSSDK.RDS`) to your `backend/*.csproj`; the SDK
   pins `AWSSDK.Core` + `AWSSDK.SecurityToken` + `AWSSDK.EC2` (the last for `AwsHostOperations`).
-- **No auxiliary DI on hot-load:** the loader does NOT run `IDuploExtension.Configure` on hot-load, and the
-  per-extension child container only provides your manifest resource services/hooks + `IRepository<T>` + the host
-  pipeline. So you cannot constructor-inject your OWN helper types (e.g. a detail-provider registry) — build them
-  as plain no-DI classes (a `static readonly` instance), passing deps per call. **Host singletons DO inject**
-  (`IScopeClientFactory`, `IScopeCredentials`, `AwsHostOperations`) via the composite child→root provider.
-- **Bump `manifest.version` to re-load edited code:** re-loading the same version does not reliably unload the old
-  assembly (you'll see an already-fixed error persist). A new version → new `assemblyDir` → fresh load context.
+- **Workers start on hot-load; `IDuploExtension.Configure` runs only on boot replay.** The hot-load path cannot
+  add to the frozen root container, so it does **not** call `IDuploExtension.Configure`; instead it scans your
+  assembly for `IHostedService` implementations and starts them directly, so a `ResourceWorkerBase` ticks as soon as
+  the bundle loads. `Configure`'s `AddHostedService<…>()` is what the startup loader uses when it replays persisted
+  extensions after a studio restart — ship it, but don't expect anything else you register in `Configure` to be
+  available on hot-load.
+- **No auxiliary DI on hot-load:** the per-extension child container only provides your manifest resource
+  services/hooks + `IRepository<T>` + the host pipeline. So you cannot constructor-inject your OWN helper types
+  (e.g. a detail-provider registry) — build them as plain no-DI classes (a `static readonly` instance), passing
+  deps per call. **Host singletons DO inject into your SERVICE/WORKER** (`IScopeClientFactory`,
+  `IScopeCredentials`, `AwsHostOperations`) via the composite child→root provider — **but NOT into controllers**
+  (they get only the child scope + the bridged host set named above, no composite provider): a controller ctor
+  takes your extension's own service (plus bridged basics like `ILogger<>`) and delegates, or you get a runtime
+  `Unable to resolve service …` the build cannot catch.
+- **Bump `manifest.version` to re-load edited code** — [06](06-registration.md#reloading-changed-code--bump-manifestversion).
 - **SDK version & NuGet cache:** the SDK is pinned by version (`sdk-version`). If the host SDK is rebuilt with new
   content at the **same** version, NuGet's global cache can serve a stale copy → "type/namespace not found" for new
   SDK APIs. The host bumps the SDK version on any SDK change; if you still hit it, clear the cached package

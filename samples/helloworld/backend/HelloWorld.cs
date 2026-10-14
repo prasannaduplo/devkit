@@ -6,6 +6,7 @@ using Duplo.Ai.Model.Resource;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using MongoDB.Bson.Serialization.Attributes;
 
 namespace Duplo.Extension.HelloWorld;
 
@@ -19,6 +20,7 @@ namespace Duplo.Extension.HelloWorld;
 // reference/01-architecture.md (the provisioning loop + hot-load).
 
 /// <summary>User-supplied inputs for a Hello World resource.</summary>
+[BsonIgnoreExtraElements]
 public class HelloWorldSpec : BaseSpec
 {
     public string? FirstName { get; set; }
@@ -26,6 +28,7 @@ public class HelloWorldSpec : BaseSpec
 }
 
 /// <summary>Outputs the provisioning skill writes back.</summary>
+[BsonIgnoreExtraElements]
 public class HelloWorldResult : BaseResult
 {
     public string? FullName { get; set; }
@@ -36,6 +39,7 @@ public class HelloWorldResult : BaseResult
 /// skill-mapping resolution during provisioning.
 /// </summary>
 [BsonCollection("extension_helloworlds")]
+[BsonIgnoreExtraElements]
 public class HelloWorld : ResourceBase<HelloWorldSpec, HelloWorldResult>
 {
     public override string GetTicketOriginType() => "HelloWorld";

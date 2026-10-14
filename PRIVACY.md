@@ -1,24 +1,13 @@
 # Privacy
 
-The dev kit's UI sends product usage metrics to DuploCloud via Mixpanel. This page says exactly
-what that means and how to turn it off.
+The dev kit's UI can send product usage metrics to DuploCloud via Mixpanel. This page says exactly
+what that means.
 
-## Opting out
+## Opting in
 
-At install, `./run.sh` asks:
-
-    Opt out of usage metrics? [y/N]:
-
-The default is opted in. Non-interactively, use `./run.sh --no-metrics` (or `--metrics` to opt
-back in). With no TTY, the default applies and nothing blocks.
-
-**After install:** set `DUPLO_USAGE_METRICS=0` in `.env`, re-run `./run.sh`, and reload any open UI
-tab — a tab already loaded keeps using the JavaScript it fetched before the change.
-
-Opting out is real, not a flag the UI is trusted to honor. The Mixpanel key is compiled into the
-UI image's JavaScript at build time, so `./run.sh` mounts an nginx config that rewrites the served
-bundle to control whether that key reaches your browser at all. Without a key the analytics
-library is never initialized and no request is made.
+Usage metrics are controlled inside the portal UI itself — the product asks for your consent there.
+The dev kit does not prompt for it, has no `.env` setting for it, and does not modify the served UI
+bundle: the nginx config in `nginx/default.conf` is a plain same-origin proxy to the studio.
 
 ## What is collected
 
@@ -85,8 +74,8 @@ on our behalf as our analytics provider. No advertisers, no data brokers, no oth
 
 ## Third party
 
-Mixpanel is the only analytics processor the dev kit enables. Turning metrics off means their
-library is never initialized in your browser, so no request is made to them at all.
+Mixpanel is the only analytics processor the UI integrates. If you do not opt in, their library is
+never initialized in your browser, so no request is made to them at all.
 
 The UI bundle also contains a Userflow integration, but the dev kit never supplies it a key, so it
 never activates.

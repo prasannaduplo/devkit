@@ -1,7 +1,7 @@
 const { withNativeFederation, share, NG_SKIP_LIST } =
   require('@angular-architects/native-federation/config');
 
-// Native Federation REMOTE. Exposes a single NgModule ('./Extension') that the host lazy-loads at
+// Native Federation REMOTE. Exposes a Routes array ('./Extension') that the host lazy-loads at
 // runtime by remoteEntry URL (see duplo-ui/portal/ai-studio/src/app/extension-route-registrar.ts).
 //
 // IMPORTANT: REMOTE_NAME must be UNIQUE across all installed extensions — it is the federation

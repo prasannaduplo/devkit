@@ -47,8 +47,7 @@ docker --version && docker compose version
    request without sending a second email.
 
    The remaining prompts: `Admin password:` (remembered by the database, not changeable by editing `.env`
-   later), `Select LLM provider:` → `Enter 1 or 2:` (`1` anthropic, `2` bedrock) and its key, and
-   `Opt out of usage metrics? [y/N]:`.
+   later) and `Select LLM provider:` → `Enter 1 or 2:` (`1` anthropic, `2` bedrock) and its key.
 
 4. `./run.sh` prints a `✔ Platform ready` summary when the stack is up. Sign in at
    <http://localhost:4210> with that email and password. You land with the `extension-dev` workspace
@@ -283,7 +282,7 @@ has no fixed schema at all. Normalizing that variance into the fixed result fiel
 is exactly the reasoning step an agent is for.
 
 VIEWS. The list view shows Domain, Availability, Registrar, Expires on, Days until
-expiry, and status. The detail view uses a result view-template with these tabs:
+expiry, and status. The detail view organizes the result into these tabs:
 Overview (availability, registrar, the dates, days until expiry, expiring soon),
 DNS (name servers as a table, status codes as pills, DNSSEC), Contact (registrar, IANA
 ID, abuse email, registrant org and country), and Raw (collapsible JSON, hidden when the
@@ -314,7 +313,7 @@ their defaults, and save.
 Provisioning opens a ticket, the agent looks the domain up over RDAP, and the resource goes to
 **Complete** in seconds. Open it: the registrar, the expiry date, the name servers, the DNSSEC flag and
 the status codes are each their own field, laid out across the Overview, DNS and Contact tabs — because
-you specified them as first-class result fields, not because anyone hand-wrote that page.
+you specified them as first-class result fields, and the agent chose a result rendering to match.
 
 ![The result view of a completed lookup, showing the registration facts as typed fields](images/devkit-whois-result-overview.png)
 
@@ -337,6 +336,6 @@ its own form, its own views, its own provisioning, live without a restart.
   something real: an S3 security posture dashboard that scans your account and reports what is
   misconfigured
 - [`.claude/skills/duplo-extension-dev/reference/`](../.claude/skills/duplo-extension-dev/reference) —
-  the authoring manual, 16 guides, and the source of truth `/duplo-extension` reads
-- [`samples/`](../samples) — nine worked extensions to copy patterns from
+  the authoring manual, 20 guides, and the source of truth `/duplo-extension` reads
+- [`samples/`](../samples) — six worked extensions to copy patterns from
 - [troubleshooting.md](troubleshooting.md) — when something breaks

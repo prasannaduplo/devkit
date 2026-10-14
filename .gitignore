@@ -31,3 +31,7 @@ Thumbs.db
 .vscode/
 .idea/
 *.swp
+.worktrees/
+
+# Local scratch — credentials, API exports, throwaway files. Never committed.
+temp/

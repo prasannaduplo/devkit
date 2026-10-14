@@ -17,7 +17,7 @@ skill reads it.
 2. On provisioning, the platform expands each scope → its `Provider` → the named `Credential`, and includes them
    in the ticket's `platform_context.scopes[]` (handled by the host; you don't call this).
 3. The **agent** (`claude-code-generic-ai-agent`) writes each scope to the ticket `cwd` with a per-provider-type
-   writer (`cwd_setup/scopes/`), and exports env vars pointing CLIs at them.
+   writer (`core/agent_setup/scopes/`), and exports env vars pointing CLIs at them.
 4. Your skill — running in that `cwd` — reads the file/env for the scope and makes its API calls.
 
 The expanded spec the platform drops at `shared/<subtype>.json` includes the `scopeIds`, so your skill knows
@@ -33,10 +33,35 @@ which scope(s) apply.
 | **Azure** (`azure`) | `.azure-<scope>/` (MSAL cache + profile) | `AZURE_CONFIG_DIR` (first scope) | `AZURE_CONFIG_DIR=.azure-<name> az …` |
 | **GitHub** (`github`) | `.config/gh/hosts.yml` | `GH_CONFIG_DIR` | `gh …` |
 | **GitLab** (`gitlab`) | `.config/glab-cli/config.yml` | `GLAB_CONFIG_DIR` | `glab …` |
+| **Duplo** (`duplo`) | `.duplo/credentials` (INI: `host`/`token` per scope) | — | read the INI; never overwrite `DUPLO_TOKEN`/`DUPLO_HOST` with it |
 | **Anything else — category `other`** (a custom / third-party HTTP API, …) | **`other_scopes/<scope-name>.json`** | — | parse JSON, call the API yourself |
+
+Selection for the `other` dump is by ProviderInfo.Type NOT in `{eks, kubernetes, gke, aks, aws, gcp, azure,
+github}` — so **`gitlab` and `duplo` scopes land in `other_scopes/<name>.json` IN ADDITION to their own
+writers** (the rows are not mutually exclusive). GCP writes BOTH `.gcloud/` (→ `CLOUDSDK_CONFIG`) and `.gcp/`
+token files.
 
 The cloud/SCM writers are for first-party CLIs. **Custom external systems use the `other` path** — that's the one
 you care about for an extension that talks to a custom external system.
+
+**Kubernetes scope — the agent-skill recipe** (a provisioning skill that kubectl-applies workloads):
+the platform materializes the k8s scope as a kubeconfig at `./.kube/config` with `KUBECONFIG` exported; a
+single attached cluster IS the current context. In `provision.sh`:
+
+```bash
+# Single attached cluster → current-context is it. Fail early if no k8s scope was attached.
+CTX=$(kubectl config current-context 2>/dev/null) || fail "no kubernetes context (attach a kubernetes scope)"
+# Always pass the context + namespace explicitly; keep every apply idempotent.
+kubectl --context "$CTX" get namespace "$NS" >/dev/null 2>&1 || kubectl --context "$CTX" create namespace "$NS"
+kubectl --context "$CTX" -n "$NS" apply -f - <<EOF
+…manifest…
+EOF
+```
+
+(Teardown mirrors it with `kubectl --context "$CTX" -n "$NS" delete … --ignore-not-found` — see
+[11-deprovisioning](11-deprovisioning.md).) The C#-side k8s client is different plumbing —
+`IScopeClientFactory.GetKubernetesClientAsync` ([10-sdk-api](10-sdk-api.md)); worked in
+`samples/worker-appstack` and `samples/passthrough-configmap`.
 
 ## The `other` (generic) provider — the case for custom integrations
 
@@ -111,6 +136,14 @@ auth = (scope["Credential"]["Data"]["username"], scope["Credential"]["Data"]["ap
 
 > `curl` gotcha: if the API URL contains `[` or `]` (e.g. a `?filter=items[0],meta[...]` query), pass
 > **`curl -g`** to disable URL globbing — otherwise curl treats the brackets as a glob range and the request fails.
+
+**Runtime facts:** `platform_context` (scopes/skills/secrets) is stamped onto
+EVERY message on the wire — it is never written to disk as a file; on disk you get the credential files
+above. Ticket secrets additionally arrive as `DUPLO_SECRET_<NAME>` env vars + `secrets/secrets.json` (0600).
+Credential files are **wiped at the end of every agent turn** and re-materialized on the next message. Use
+`$TMPDIR` (the ticket's `tmp/`) for cross-call scratch — `/tmp` is a PRIVATE tmpfs per bash invocation.
+Never overwrite these env vars in a skill: `DUPLO_TOKEN`, `DUPLO_HOST`, `TF_APPEND_USER_AGENT`,
+`AWS_EXECUTION_ENV`, `CLOUDSDK_METRICS_ENVIRONMENT` (partner attribution).
 
 The agent also injects an **"## Additional Scopes"** section into its own system prompt that lists each
 `other_scopes/*.json` file and its key tree — so the agent already knows the files exist. Your skill should still

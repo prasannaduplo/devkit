@@ -11,6 +11,7 @@ Everything the dev kit reads comes from `.env` in the repo root. Copy it from `.
 - [Licensing](#licensing)
 - [Image tags](#image-tags)
 - [Host ports](#host-ports)
+- [Knowledge Base](#knowledge-base)
 - [Build and deploy target](#build-and-deploy-target)
 - [Authentication and platform](#authentication-and-platform)
 - [LLM provider](#llm-provider)
@@ -64,9 +65,9 @@ Pin the published images the stack runs.
 
 | Variable | Default in `.env.example` | Effect |
 | --- | --- | --- |
-| `STUDIO_TAG` | `branch-refs-pull-271-merge-ca7a003c` | The AI HelpDesk studio image (the platform API). Format is `branch-<sanitized-branch>-<short-sha>`. Pinned to a build that enforces `Licensing:Token` — do not roll it back to a pre-licensing tag. |
-| `AGENT_TAG` | `branch-feature-plugin-c47ade5` | The `claude-code-agent` image that executes provisioning tickets. |
-| `UI_TAG` | `db2523ba52a227c540fb8e4fe7eb9fcf8027e4ad` | The Angular portal image. A `duplo-ui` git SHA, pinned to a build that renders the license state. |
+| `STUDIO_TAG` | `branch-refs-pull-548-merge-663a7586` | The AI HelpDesk studio image (the platform API). Format is `branch-<sanitized-branch>-<short-sha>`. Pinned to a build that enforces `Licensing:Token` — do not roll it back to a pre-licensing tag. |
+| `AGENT_TAG` | `main-d27e511` | The `claude-code-agent` image that executes provisioning tickets. A `main` build — it carries no extension-specific changes. |
+| `UI_TAG` | `2a949c536be71efd4501dd60ca6fdda4f7b4676a` | The Angular portal image. A `duplo-ui` git SHA, pinned to a build that renders the license state. |
 | `XTERM_TAG` | `main-d323e0b` | The in-browser terminal image. |
 | `STUDIO_PLATFORM` | `linux/amd64` | Docker platform for the studio image. On Apple Silicon the studio image is amd64-only and runs emulated. Leave as-is unless you have an arm64 image. |
 
@@ -98,6 +99,29 @@ Change any of these if they still collide with something on your machine, then r
 > `*_PORT` is unset — for example `UI_PORT` falls back to 4200, not 4210. Blanking a port does not mean
 > "use the dev-kit default"; it means "use the platform default". If a port is in use, see
 > [troubleshooting.md](troubleshooting.md#a-port-is-already-in-use).
+
+## Knowledge Base
+
+A Qdrant vector database runs alongside the rest of the stack, always on, and `run.sh` registers it with
+the platform as the `devkit-docs` Knowledge Base — see [architecture.md](architecture.md#the-stack).
+
+| Variable | Default | Effect |
+| --- | --- | --- |
+| `QDRANT_PORT` | `6333` | Host port for the Qdrant dashboard and REST API — `http://localhost:6333`, published on loopback only. Unlike the ports above this is Qdrant's own default rather than an offset one, so change it if something on your machine already holds 6333. The studio never uses it: in-network it reaches Qdrant at `http://qdrant:6333`. |
+| `QDRANT_API_KEY` | `devkit-local-qdrant` | Qdrant's master key. Fixed, and deliberately **not** a secret — Qdrant is reachable only from the compose network and from loopback on this host. `docker-compose.yml` and `scripts/register-qdrant.sh` read this same value, so a first run cannot start the container and the provider record out of step. They can still drift afterwards — see below. |
+
+If you are going to change the key, change it before the first run. `register-qdrant.sh` copies it into the
+`local-qdrant` provider record at the moment it creates that record; a later run against a provider that
+already exists does not rewrite the credential. Change the key after that first run and the two no longer
+match: the container rejects the stored credential, every Qdrant call the studio makes comes back 401, and
+the collection retries until it lands in **Failed**. Recovering means putting the old key back, or deleting
+the `local-qdrant` provider (with `QDRANT_PROVIDER_ID` in `.env`) and re-running the script.
+
+Uploading documents into the Knowledge Base needs AWS Bedrock, whatever LLM provider the rest of the stack
+runs on. The embedding model the studio seeds is Bedrock's `cohere.embed-v4` and the agent ingests with no
+other provider, so ingestion needs Bedrock credentials that can invoke that model. `run.sh` registers the
+Knowledge Base either way — on the direct-Anthropic path the `devkit-docs` collection still provisions to
+Ready and can be browsed from the UI, but each document upload fails.
 
 ## Build and deploy target
 
@@ -139,22 +163,37 @@ Managed by `./run.sh` — leave them blank in a fresh `.env` and let it prompt.
 
 ## LLM provider
 
-`run.sh` sets these from your `--model` choice. Precedence is `ANTHROPIC_API_KEY` → Azure → Bedrock.
+`run.sh` sets these from your `--model` choice. Precedence in the agent is `ANTHROPIC_API_KEY` → gateway
+(`ANTHROPIC_BASE_URL` with the key **empty**) → Azure → `CLAUDE_CODE_OAUTH_TOKEN` → Bedrock.
+
+Subscription auth sits next-to-last on purpose: a token exported in someone's shell must never displace a
+provider that was configured deliberately. The cost of that ordering is that the `subscription` arm has to
+blank `ANTHROPIC_API_KEY` and `ANTHROPIC_BASE_URL`, or either would win the chain and the token would never
+be read.
 
 | Variable | Effect |
 | --- | --- |
-| `DEVKIT_MODEL` | `anthropic`, `bedrock`, or `bedrock-instance-role`. Chooses which credential block below is used. |
-| `CLAUDE_MODEL` | The model id the agent calls. `claude-sonnet-4-6` for Anthropic; `us.anthropic.claude-sonnet-4-6` for either Bedrock mode. Not interchangeable — the direct Anthropic API rejects the `us.*` prefix and Bedrock requires it. |
-| `ANTHROPIC_API_KEY` | Direct Anthropic API key. |
+| `DEVKIT_MODEL` | `anthropic`, `bedrock`, `gateway`, `bedrock-instance-role`, or `subscription`. Chooses which credential block below is used. |
+| `CLAUDE_MODEL` | The model id the agent calls, and the System default in the ticket LLM picker. `claude-sonnet-5` for Anthropic; `us.anthropic.claude-sonnet-5` for either Bedrock mode; for `gateway`, whatever the gateway calls it (OpenRouter: `anthropic/claude-sonnet-5`); for `subscription`, a first-party id the Claude CLI accepts. Not interchangeable — the direct Anthropic API rejects the `us.*` prefix and Bedrock requires it. |
+| `CLAUDE_EXTRA_MODELS` | Comma-separated extra model ids registered alongside `CLAUDE_MODEL` so they show in the picker. `claude-opus-5` for Anthropic and `subscription` (both call the first-party API with bare ids), `us.anthropic.claude-opus-5` for Bedrock, blank for `gateway` (a gateway names models its own way, so only the id you supplied is registered). Registration-only; the agent runs on `CLAUDE_MODEL`. |
+| `ANTHROPIC_API_KEY` | Direct Anthropic API key. Blanked by `gateway`: key **and** URL together mean "proxy in front of the real Anthropic API", a different agent code path that would send the gateway's token nowhere useful. |
+| `CLAUDE_CODE_OAUTH_TOKEN` | `subscription`: a long-lived Claude Code token from `claude setup-token`, run on your own machine (it needs a browser). Not the short-lived credential in your OS keychain, and not an `sk-ant-api…` API key — those are three different auth schemes to the Claude CLI. Runs the agent on your personal Claude Code subscription, so usage counts against your own limits and every ticket authenticates as you: local development only, never a shared stack. Ticket titles are not generated on this path, since the title LLM is Bedrock-only. |
+| `ANTHROPIC_BASE_URL` | `gateway`: base URL of any Anthropic-compatible endpoint — OpenRouter, Bifrost, LiteLLM, Snowflake Cortex. The gateway holds the real provider credentials; Bedrock is never enabled on this path. |
+| `ANTHROPIC_AUTH_TOKEN` | `gateway`: bearer token / API key the gateway expects. Blank for an unauthenticated gateway (a local Bifrost, say). |
+| `CLAUDE_CODE_MAX_CONTEXT_TOKENS` | `gateway` only — `run.sh` sets **262144** when you pick it. Declares the model's real context window. A gateway usually serves model ids the Claude CLI doesn't recognise, and an unrecognised id has no known window, so long sessions fail with a 400 instead of compacting. Override with `--gateway-max-context-tokens`, or edit `.env` (re-runs keep whatever is there). Not set by any other provider — those name models the CLI already knows. |
+| `CLAUDE_CODE_AUTO_COMPACT_WINDOW` | `gateway` only — `run.sh` sets **200000** when you pick it. The threshold at which a session compacts; keep it below `CLAUDE_CODE_MAX_CONTEXT_TOKENS`. Override with `--gateway-compact-window`. |
+| `CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS` | `gateway`, optional and **not** set by default. `1` is required for Snowflake Cortex, which rejects Claude Code's experimental beta headers with `400 invalid beta flag`. OpenRouter, Bifrost and LiteLLM strip those headers themselves and don't need it. |
 | `AWS_REGION` | Bedrock region (default `us-west-2`). Set to `us-east-1` even on an Anthropic setup — the agent's title LLM is Bedrock-only, and a valid region stops its client crash-looping on a malformed endpoint. With no AWS credentials the title call simply no-ops and titles are not generated. Under `bedrock-instance-role` this is the **only** AWS value stored, and blanking it forces a re-probe on the next run. |
 | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN` | Bedrock credentials. Left blank under `bedrock-instance-role`, deliberately: empty-but-present values do not short-circuit the agent's credential chain, so it falls through to IMDS and picks up the instance role. |
 | `AZURE_BASE_URL`, `AZURE_API_KEY`, `AZURE_CLIENT_ID` | Azure AI Foundry, if you use it instead. |
 
 Switching provider does **not** clear the previous provider's credentials — only `./run.sh --reset` does.
-Because the precedence above is fixed, a leftover `ANTHROPIC_API_KEY` silently wins over Bedrock; choosing
-`bedrock` warns when it finds one still set. The one exception is `bedrock-instance-role`, which blanks the
-static AWS keys and `ANTHROPIC_API_KEY`: there it is load-bearing rather than hygiene, since anything left
-in those wins the chain and the instance role would never be consulted.
+Because the precedence above is fixed, a leftover `ANTHROPIC_API_KEY` or `ANTHROPIC_BASE_URL` silently wins
+over Bedrock; choosing `bedrock` warns when it finds either still set, and `anthropic` warns about a leftover
+`ANTHROPIC_BASE_URL` (your key would be sent there instead of to api.anthropic.com). Two arms do blank
+values, and there it is load-bearing rather than hygiene: `bedrock-instance-role` blanks the static AWS keys,
+`ANTHROPIC_API_KEY` and `ANTHROPIC_BASE_URL` (anything left in those wins the chain and the instance role
+would never be consulted), and `gateway` blanks `ANTHROPIC_API_KEY` (see the table).
 
 `run.sh` also runs `scripts/register-llm.sh` on every provider. The studio ships no LLM model records of
 its own, so on a fresh DB the ticket LLM picker has nothing to offer; this registers whatever `CLAUDE_MODEL`
@@ -201,6 +240,7 @@ Written on first run. You should not need to set these by hand.
 | `EXTENSION_DEV_WORKSPACE_ID` | The auto-created `extension-dev` workspace. |
 | `EXTENSION_DEV_PERMSET_ID` | The `extension-dev-access` permission set granting that workspace. |
 | `EXTENSION_DEV_PERMSETGROUP_ID` | The `extension-dev-group` assigning your admin user to that permission set. |
+| `QDRANT_PROVIDER_ID`, `QDRANT_SCOPE_ID`, `QDRANT_COLLECTION_ID` | The `local-qdrant` provider, the `qdrant` scope over it, and the `devkit-docs` collection, all written by `scripts/register-qdrant.sh`. Cleared by `--reset` with the rest of the stack state, because the records they name go with the database. |
 
 The permission set and group exist because the UI's accessible-workspace list is permission-set based with
 no superuser bypass. Without them, login lands on `/app/auth/no-tenant-access` even though the admin token
@@ -208,23 +248,10 @@ works against the API.
 
 ## Usage metrics
 
-The portal sends product usage metrics to DuploCloud via Mixpanel, tied to the email you sign in with.
-[PRIVACY.md](../PRIVACY.md) lists exactly what is and is not collected.
-
-| Variable | Default | Effect |
-| --- | --- | --- |
-| `DUPLO_USAGE_METRICS` | *(blank — `run.sh` prompts on first run)* | `1` opted in, `0` opted out. Ships blank so a first run actually asks. |
-| `METRICS_CONF` | *(derived)* | The nginx fragment implementing the choice — `metrics-on.conf` or `metrics-off.conf`. **Do not hand-edit; changing it alone does nothing.** `run.sh` re-derives it from `DUPLO_USAGE_METRICS` on every run. |
-
-`./run.sh` prompts on first run and the default is opted **in**. Non-interactively, use `--no-metrics` or
-`--metrics`; with no TTY the default applies silently rather than blocking.
-
-**To change your mind:** set `DUPLO_USAGE_METRICS` to `0` or `1`, re-run `./run.sh`, and reload any open UI
-tab — a tab already loaded keeps using the JavaScript it fetched before the change.
-
-The opt-out is enforced at the proxy, not by trusting the UI. The Mixpanel key is compiled into the
-published image's Angular bundle at build time, so `run.sh` mounts an nginx config that rewrites the served
-bundle. Opted out, the key never reaches your browser and the analytics library is never initialized.
+The portal UI asks for consent to send product usage metrics to DuploCloud via Mixpanel. That choice is
+made in the UI, not by `run.sh` — there is no dev-kit prompt, flag, or `.env` variable for it, and
+`nginx/default.conf` serves the published UI bundle unmodified. [PRIVACY.md](../PRIVACY.md) lists exactly
+what is and is not collected.
 
 ### `.env.defaults`
 

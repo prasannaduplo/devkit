@@ -12,5 +12,8 @@ import { ViewCalculatorComponent } from './view/view-calculator.component';
 export const Extension: Routes = [
   { path: '', component: ListCalculatorComponent },
   { path: 'add', component: AddCalculatorComponent },
+  // Add and Edit share one component (platform convention); `action` drives the labels.
+  // Editing the spec is what re-triggers the background worker.
+  { path: 'edit/:id', component: AddCalculatorComponent, data: { action: 'Edit' } },
   { path: 'view/:id', component: ViewCalculatorComponent },
 ];

@@ -37,6 +37,7 @@ public class CalculatorResult : BaseResult
 }
 
 [BsonCollection("extension_calcworkers")]
+[BsonIgnoreExtraElements]
 public class Calculator : ResourceBase<CalculatorSpec, CalculatorResult>
 {
     public override string GetTicketOriginType() => "CalcWorker";

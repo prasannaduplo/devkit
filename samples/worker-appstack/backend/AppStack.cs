@@ -31,6 +31,7 @@ public class AppStackResult : BaseResult
 }
 
 [BsonCollection("extension_appstacks")]
+[BsonIgnoreExtraElements]
 public class AppStack : ResourceBase<AppStackSpec, AppStackResult>
 {
     public override string GetTicketOriginType() => "AppStack";

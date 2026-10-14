@@ -106,6 +106,8 @@ export class AddHelloComponent implements OnInit {
 
   protected readonly isEdit = this.route.snapshot.data['action'] === 'Edit';
   private readonly id: string = this.route.snapshot.params['id'];
+  /** Full spec as loaded in edit mode — spread into the PATCH body (spec is replaced wholesale). */
+  private loadedSpec: Record<string, any> = {};
 
   // Platform error reporter: the form-group-errors directive (already on the <form>) surfaces the real
   // API error via extractErrorMessage (reads response `errors`, not just the generic `message` title).
@@ -118,6 +120,9 @@ export class AddHelloComponent implements OnInit {
     this.loading.set(true);
     this.svc.get(this.id).subscribe({
       next: item => {
+        // Keep the WHOLE loaded spec: PATCH {spec} replaces the spec wholesale, so any field this form
+        // doesn't edit must be spread back on save or it is silently erased.
+        this.loadedSpec = item?.spec ?? {};
         this.name.set(item?.name ?? '');
         this.firstName.set(item?.spec?.firstName ?? '');
         this.lastName.set(item?.spec?.lastName ?? '');
@@ -129,7 +134,8 @@ export class AddHelloComponent implements OnInit {
 
   protected submit(): void {
     this.saving.set(true);
-    const spec = { firstName: this.firstName(), lastName: this.lastName() };
+    // Spec is replaced WHOLESALE by PATCH (no deep merge) — always send the FULL spec; never echo `result`.
+    const spec = { ...this.loadedSpec, firstName: this.firstName(), lastName: this.lastName() };
     const call = this.isEdit
       ? this.svc.update(this.id, spec)
       : this.svc.create(this.name(), spec);

@@ -32,8 +32,6 @@ This does not error. The build passes, unit tests pass, the shell renders — an
 a `subscribe`/`setTimeout`/promise never repaints. A list sits empty forever while the network tab shows the
 data arrived. It is invisible until you load the page in the host.
 
-All nine dev-kit samples shipped with this bug: 0 of 67 components set the property.
-
 **The fix is not to add `Eager`.** Hold async state in `signal()` and leave the property off — a signal
 write marks the view dirty, which is what makes the modern default correct rather than a trap. (`Eager` is
 a bulk-migration shim; `duplo-ui/portal` uses it on 898 of 904 components because retrofitting them to
@@ -135,12 +133,11 @@ These are the ones a generic Angular 22 guide will get wrong.
 **A green build proves nothing about change detection.** The OnPush trap, unresolved attribute directives,
 and a missing `imports` entry can all compile cleanly.
 
-Run these from `frontend/`. `$OWN` skips vendored code you did not write — in the dev-kit that is
-`src/app/result-template/`, a verbatim copy of host code that stays on the old shape until the lib exports
-it. Point `$OWN` at your own directories.
+Run these from `frontend/`. Everything under `src/app` — including the shared detail shell and every
+result-view panel component (reference/17, reference/19) — is your code and must pass this gate.
 
 ```bash
-OWN=$(find src/app -name '*.ts' -not -path '*/result-template/*')
+OWN=$(find src/app -name '*.ts')
 
 # 1. no component silently relying on the OnPush default while assigning plain fields
 for f in $OWN; do

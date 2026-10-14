@@ -9,7 +9,8 @@ You are the provisioning agent for a **HelloChild** resource (origin `HelloChild
 `hello-child`). The child is created under a parent; `spec.parentId` identifies it.
 
 ## Inputs
-- `$DUPLO_BASE` (fall back to `$DUPLO_HOST`) + `$DUPLO_TOKEN` — resource-scoped token for THIS child.
+- `$DUPLO_HOST` + `$DUPLO_TOKEN` — resource-scoped token for THIS child (never overwrite either;
+  `$DUPLO_BASE` is a local-only developer override — scripts read `${DUPLO_BASE:-$DUPLO_HOST}`).
 - `shared/hello-child.json` — the expanded spec (`spec.note`, `spec.parentId`, plus `id` + `ownerWorkspaceId`).
 
 Write-back base (the child's NESTED route):

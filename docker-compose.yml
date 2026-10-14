@@ -8,7 +8,7 @@
 
 services:
   mongo:
-    image: mongo:6.0
+    image: mongo:7.0.14
     restart: unless-stopped
     ports:
       - "${MONGO_PORT:-27017}:27017"
@@ -19,6 +19,28 @@ services:
     volumes:
       # loaded_extensions records live here → previously-loaded extensions are replayed on restart.
       - mongo_data:/data/db
+
+  # Vector database backing the Knowledge Base. Always on, like mongo — one code path, and the
+  # Knowledge Base is simply present. Reachable in-network at http://qdrant:6333; the host port is
+  # published on loopback so the Qdrant dashboard is available for debugging.
+  qdrant:
+    image: qdrant/qdrant:v1.18.2
+    restart: unless-stopped
+    ports:
+      # Bound to 127.0.0.1 deliberately, unlike the mongo line above: the fixed API key below is only
+      # safe because nothing off this host can reach Qdrant, and the dev kit is documented as running on
+      # EC2 hosts. A bare "6333:6333" would publish it on every interface.
+      - "127.0.0.1:${QDRANT_PORT:-6333}:6333"
+    environment:
+      # Fixed, and deliberately not a secret — Qdrant is reachable only on the compose network and
+      # loopback, per the port binding above. Single-sourced from .env so the compose file and
+      # scripts/register-qdrant.sh cannot drift.
+      - QDRANT__SERVICE__API_KEY=${QDRANT_API_KEY:-devkit-local-qdrant}
+      # Required, not decorative: lets the studio mint read-only per-collection tokens for the agent
+      # instead of handing it this master key.
+      - QDRANT__SERVICE__JWT_RBAC=true
+    volumes:
+      - qdrant_data:/qdrant/storage
 
   # One-shot: chown the shared named volumes to uid 1001 so the non-root studio + agent
   # (both appuser 1001) can write them. Named volumes are created root-owned, and run.sh
@@ -33,7 +55,7 @@ services:
       - claude_sessions:/csessions
 
   duplo-ai-studio:
-    image: quay.io/duplocloud/duplo-ai-helpdesk:${STUDIO_TAG}
+    image: quay.io/duplocloud/backend:${STUDIO_TAG}
     # Feature-branch studio images are built amd64-only (arm64 is built on main). On Apple Silicon
     # this runs under emulation. Override per-arch by setting STUDIO_PLATFORM in .env.
     platform: ${STUDIO_PLATFORM:-linux/amd64}
@@ -82,10 +104,22 @@ services:
       - MCP_TIMEOUT=1800
       - CCA_DISABLE_BWRAP=true
       - CLAUDECODE=''
-      # ── LLM provider (agent picks by precedence: ANTHROPIC_API_KEY → Azure Foundry → AWS Bedrock).
-      #    Set the one you use in .env; the rest stay empty. ──
-      - CLAUDE_MODEL=${CLAUDE_MODEL:-claude-sonnet-4-6}
+      # ── LLM provider (agent picks by precedence: ANTHROPIC_API_KEY → gateway (ANTHROPIC_BASE_URL
+      #    without a key) → Azure Foundry → CLAUDE_CODE_OAUTH_TOKEN → AWS Bedrock). Set the one you use
+      #    in .env; the rest stay empty. ──
+      - CLAUDE_MODEL=${CLAUDE_MODEL:-claude-sonnet-5}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      # Your own Claude Code subscription (`./run.sh --model subscription`). Sits next-to-last in the
+      # agent's precedence chain, deliberately: a token exported in a shell must never displace a
+      # provider someone configured on purpose. Local development only — it authenticates as one person.
+      - CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_CODE_OAUTH_TOKEN:-}
+      # LLM gateway (OpenRouter, Bifrost, LiteLLM, Snowflake Cortex …). The CLAUDE_CODE_* knobs are
+      # optional per-gateway tuning the agent forwards to the Claude CLI only when set.
+      - ANTHROPIC_BASE_URL=${ANTHROPIC_BASE_URL:-}
+      - ANTHROPIC_AUTH_TOKEN=${ANTHROPIC_AUTH_TOKEN:-}
+      - CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=${CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS:-}
+      - CLAUDE_CODE_MAX_CONTEXT_TOKENS=${CLAUDE_CODE_MAX_CONTEXT_TOKENS:-}
+      - CLAUDE_CODE_AUTO_COMPACT_WINDOW=${CLAUDE_CODE_AUTO_COMPACT_WINDOW:-}
       - AZURE_BASE_URL=${AZURE_BASE_URL:-}
       - AZURE_API_KEY=${AZURE_API_KEY:-}
       - AZURE_CLIENT_ID=${AZURE_CLIENT_ID:-}
@@ -93,6 +127,10 @@ services:
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
       - AWS_SESSION_TOKEN=${AWS_SESSION_TOKEN:-}
+      # Docker-in-Docker: the dind service shares this container's network namespace, so its daemon
+      # is reachable on loopback here and nowhere else.
+      - DOCKER_HOST=tcp://127.0.0.1:2375
+      - CCA_ENABLE_DOCKER=true
     volumes:
       # Shared /data so the agent reads the skills the studio seeded (CCA reads /data/skills).
       - platform_data:/data
@@ -103,6 +141,46 @@ services:
       init-perms:
         condition: service_completed_successfully
 
+  # Docker-in-Docker daemon for the agent, mirroring the dind sidecar in the helpdesk-helm chart.
+  #
+  # network_mode joins claude-code-agent's network namespace — the compose equivalent of a pod's
+  # shared netns — so dockerd bound to 127.0.0.1 is reachable by the agent and by nothing else: not
+  # the compose network, not the host. The agent keeps owning its network identity, so
+  # http://claude-code-agent:8000 still resolves for the studio. The agent cannot depends_on this
+  # service (network_mode already makes this one depend on the agent); docker calls simply fail for
+  # the few seconds until the daemon is up.
+  #
+  # The image entrypoint is bypassed: with TLS off it force-binds tcp://0.0.0.0:2375 and ignores any
+  # --host passed. modprobe replicates the entrypoint's kernel-module loading; --tls=false suppresses
+  # the insecure-bind startup delay.
+  dind:
+    image: docker:27-dind
+    restart: unless-stopped
+    privileged: true
+    network_mode: "service:claude-code-agent"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        modprobe ip_tables || true
+        modprobe ip6_tables || true
+        modprobe nf_tables || true
+        modprobe overlay || true
+        exec dockerd --host=tcp://127.0.0.1:2375 --tls=false
+    environment:
+      - DOCKER_HOST=tcp://127.0.0.1:2375
+    healthcheck:
+      test: ["CMD", "docker", "info"]
+      interval: 10s
+      start_period: 5s
+    volumes:
+      # Same /data as the agent, so `docker run -v /data/...` bind-mount paths resolve daemon-side.
+      - platform_data:/data
+      # Image/container storage. Wiped with the rest by run.sh's `down -v`, like the chart's emptyDir.
+      - dind_storage:/var/lib/docker
+    depends_on:
+      claude-code-agent:
+        condition: service_started
+
   duplo-ui:
     image: quay.io/duplocloud/duplo-ai-helpdesk-ui:${UI_TAG}
     restart: unless-stopped
@@ -111,11 +189,6 @@ services:
     volumes:
       # Published image serves the SPA only; this conf proxies API prefixes to the studio (same-origin, no CORS).
       - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
-      # Selected by run.sh from the DUPLO_USAGE_METRICS answer: metrics-on.conf inserts the
-      # Mixpanel key, metrics-off.conf strips it. Included by default.conf. The fallback is
-      # metrics-off.conf so a stack brought up without run.sh (no METRICS_CONF in .env) fails
-      # closed — no key — rather than tracking someone who never answered. See PRIVACY.md.
-      - ./nginx/${METRICS_CONF:-metrics-off.conf}:/etc/nginx/metrics.conf:ro
     depends_on:
       - duplo-ai-studio
 
@@ -141,7 +214,9 @@ services:
   # below). Both routes are live; the compose network is simply the preferred one.
   builder:
     profiles: [tools]
-    image: ${BUILDER_IMAGE:-quay.io/duplocloud/duplo-extension-builder:${BUILDER_TAG:-latest}}
+    # scripts/_builder.sh resolves BUILDER_TAG and exports BUILDER_IMAGE before every build. This default is only
+    # for a hand-run `docker compose run builder`, and must match _BUILDER_PINNED_IMAGE there.
+    image: ${BUILDER_IMAGE:-quay.io/duplocloud/duplo-extension-builder@sha256:8185e6a74379ae99e145f55608b3bc17e3037e95e64a612a226fe0eb15c0dbcd}
     # Unset by default, so the build runs on the host's native architecture. Set BUILDER_PLATFORM only
     # to force one (e.g. linux/amd64 if a publish ever ends up amd64-only) — an unset value is dropped
     # by compose, whereas copying duplo-ai-studio's linux/amd64 default would silently emulate a .NET
@@ -184,6 +259,8 @@ volumes:
   platform_data:
   extension_studio_data:
   claude_sessions:
+  qdrant_data:
+  dind_storage:
   # Keyed by uid on purpose: these are written as the calling user (see the service's `user:`), and one
   # uid's runtime-created cache subdirectories are not writable by another, so sharing a single pair
   # would break the second uid to build. build/Dockerfile.builder has the full reasoning, including why

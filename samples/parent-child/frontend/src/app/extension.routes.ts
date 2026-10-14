@@ -17,7 +17,11 @@ import { ViewChildComponent } from './children/view-child.component';
 export const Extension: Routes = [
   { path: '', component: ListParentsComponent },
   { path: 'add', component: AddParentComponent },
+  // Add and Edit share one component (platform convention); `action` drives the labels. Edits PATCH the
+  // FULL spec so the existing provisioning ticket is reused (reference/04-hooks.md).
+  { path: 'edit/:id', component: AddParentComponent, data: { action: 'Edit' } },
   { path: 'view/:parentId', component: ViewParentComponent },
   { path: 'view/:parentId/children/add', component: AddChildComponent },
+  { path: 'view/:parentId/children/edit/:childId', component: AddChildComponent, data: { action: 'Edit' } },
   { path: 'view/:parentId/children/:childId', component: ViewChildComponent },
 ];

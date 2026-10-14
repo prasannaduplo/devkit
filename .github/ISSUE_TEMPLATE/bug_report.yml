@@ -77,7 +77,7 @@ body:
     id: sample
     attributes:
       label: Sample or extension involved
-      description: If one sample reproduces it, name it — helloworld, parent-child, form-wizard, worker-compute, and so on.
+      description: If one sample reproduces it, name it — helloworld, network-stack, parent-child, worker-compute, and so on.
       placeholder: samples/helloworld
 
   - type: input
