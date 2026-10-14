@@ -2,7 +2,7 @@
   "$schema_note": "Machine-readable mirror of EXTENSION_BACKLOG.md -- keep both in sync when editing.",
   "owner": "prasannaduplo",
   "generated": "2026-08-17",
-  "updated": "2026-09-22",
+  "updated": "2026-10-14",
   "sweepSources": [
     "/Users/prasannavenkatesh/Documents/customers/payfinia/repo/devops",
     "/Users/prasannavenkatesh/Documents/customers/incent/repo/Infrastructure",
@@ -62,7 +62,8 @@
       22,
       35,
       49,
-      50
+      50,
+      58
     ]
   },
   "newGroundIds": [
@@ -1403,6 +1404,28 @@
       "notes": "2026-09-22 repo sweep confirmed no extension or script exists for this today -- only customer-facing intake paperwork (Payfinia-iTHINK AWS_VPN_Customer_Form {PROD,TEST} - 5.19.26.xlsx, OnPoint/iThink PDFs, one literally named '...rohit-update iThink.pdf'). Distinct setup concern from #56's monitoring concern; idea-stage only, not scoped for build.",
       "status": "Not started",
       "productExtension": false
+    },
+    {
+      "id": 58,
+      "name": "Cloudflare Workers Watch & Governed Deploy",
+      "tier": "greenfield",
+      "classification": "generic",
+      "customer": [
+        "MoreThanRewards (idea source)"
+      ],
+      "extensionType": "Worker",
+      "scopes": [
+        "other",
+        "github"
+      ],
+      "sourcePaths": [
+        "extensions/cloudflare"
+      ],
+      "description": "v1 Worker polls a Cloudflare account's Workers inventory, deployments and GraphQL error rates, persists deployment history and alerts to Slack on new deploys/new scripts/error spikes; v2 Agent runs a governed wrangler deploy with LLM diff review and human approval; v3 optional DNS/WAF posture audit.",
+      "newGround": false,
+      "notes": "Sourced from Jason Brethorst (MTR) Slack ask 2026-10-13: agentic code runs on Cloudflare Workers, human apps on AWS. MTR also fronts migrated AWS apps with proxied Cloudflare DNS, so zone/DNS + SSL-mode checks move into v1. 2026-10-14: not new ground -- other-scope integrations (duploai-issue-reporter Jira/ClickUp, prd-mgmt-extension Slack, opensearch-extension, duploai-extension-pocs Jenkins, baic-uniphore OCI) and DriftCadence polling Workers (duploai-extension-pull-request-review, duploai-extension-automation) already exist in other repos. Keep the Cloudflare MCP server (AI HelpDesk) on a separate scope from the extension. Full design in EXTENSION_BACKLOG.md.",
+      "status": "v1 built + deployed (2026-10-14)",
+      "productExtension": true
     }
   ]
 }

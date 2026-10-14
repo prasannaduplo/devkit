@@ -1,0 +1,8 @@
+# Throwaway Worker for exercising the CloudflareWatch extension (#58). Not part of the extension bundle.
+name = "duplo-watch-demo"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+workers_dev = true
+
+[vars]
+APP_VERSION = "1"

@@ -1,0 +1,56 @@
+{
+  "manifestVersion": "1.0",
+  "id": "duplo.examples.cloudflare",
+  "name": "Cloudflare",
+  "version": "0.1.2",
+
+  "sdkVersion": "REPLACED_BY_SKILL_FROM_sdk-version_ENDPOINT",
+  "backend": {
+    "assemblyDir": "duplo.examples.cloudflare/0.1.2/backend",
+    "entryAssembly": "Duplo.Extension.Cloudflare.dll"
+  },
+
+  "resources": [
+    {
+      "ticketOriginType": "CloudflareWatch",
+      "restSegment": "extensions/cloudflare-watches",
+      "subType": "cloudflare-watch",
+      "archetype": "typed",
+      "registrar": "DevOpsResource",
+      "entityType": "Duplo.Extension.Cloudflare.CloudflareWatch",
+      "specType": "Duplo.Extension.Cloudflare.CloudflareWatchSpec",
+      "resultType": "Duplo.Extension.Cloudflare.CloudflareWatchResult",
+      "hooksType": "Duplo.Extension.Cloudflare.CloudflareWatchHooks",
+      "serviceType": "Duplo.Extension.Cloudflare.CloudflareWatchService"
+    }
+  ],
+
+  "frontend": {
+    "remote": {
+      "remoteName": "duploExtensionCloudflare",
+      "remoteEntry": "/v1/aiservicedesk/extensions/duplo.examples.cloudflare/fe/remoteEntry.json",
+      "exposedModule": "./Extension",
+      "type": "module"
+    },
+    "menus": [
+      {
+        "id": "duplo.examples.cloudflare-section",
+        "title": "Cloudflare",
+        "type": "collapsible-section",
+        "children": [
+          {
+            "id": "duplo.examples.cloudflare-workers-watch",
+            "title": "Workers Watch",
+            "type": "item",
+            "matIcon": "cloud-outline",
+            "relativeUrl": "extensions/cloudflare-watches",
+            "order": 10
+          }
+        ]
+      }
+    ],
+    "routes": [
+      { "path": "extensions/cloudflare-watches", "resourceType": "CloudflareWatch", "subType": "cloudflare-watch" }
+    ]
+  }
+}

@@ -1,0 +1,4 @@
+{"success":true,"errors":[],"messages":[],"result":[
+ {"id":"api-gateway","created_on":"2026-09-01T10:00:00Z","modified_on":"2026-10-10T08:00:00Z","etag":"e1","handlers":["fetch"],"usage_model":"standard"},
+ {"id":"agent-runner","created_on":"2026-09-15T10:00:00Z","modified_on":"2026-10-12T09:30:00Z","etag":"e2","handlers":["fetch","scheduled"]}
+]}

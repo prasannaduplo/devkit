@@ -99,11 +99,28 @@ is validated.
 ### New-ground flags across the whole list
 
 - **Windows remote-execution** (no sample) — #14, #23, #24, #25.
-- **Jira via `other` scope** — #30 (ticket-scoping assistant) still has no *extension-shaped* sample, but a real
-  working integration now exists to model the HTTP calls on: #47 (PR→Jira status sync, `incent/repo/Incent`)
-  transitions issues and posts comments via the Jira REST API today. Use it as the reference for #30's `other`-scope
-  plumbing.
-- **Slack via `other` scope** (no sample, pattern only) — notification piece of #6.
+- **`other`-scope integrations — RESOLVED 2026-10-14.** Not new ground any more: a GitHub sweep (2026-10-13/14) found
+  ~51 extension repos across the `duplocloud` / `duplocloud-internal` orgs (each team clones the dev-kit into its own
+  repo — they are *not* devkit forks; all 15 forks carry no extensions). Several already ship working `other`-scope
+  integrations to copy from — see [Reference extensions in other repos](#reference-extensions-in-other-repos-2026-10-14).
+  - **Jira** — #30/#47: copy `duplocloud-internal/duploai-issue-reporter` (`Jira/JiraCredentialSource.cs` + client,
+    with unit tests) instead of modelling from the Incent workflow YAML.
+  - **Slack** — #6/#56: copy `duplocloud-internal/prd-mgmt-extension` `extensions/roadmap/backend/SlackAccess.cs`
+    (`bot_token` key on an `other` scope).
+  - **Cloudflare** — #58: no longer "first"; assembles the patterns below.
+
+### Reference extensions in other repos (2026-10-14)
+
+Shallow-clone with `git clone --depth 1` (the GitHub code-search API rate-limits fast). Patterns worth copying:
+
+| Pattern | Repo → file | Notes |
+|---|---|---|
+| `other`-scope credential source (C#) | `duplocloud-internal/duploai-issue-reporter` → `backend/Jira/JiraCredentialSource.cs`, `ClickUp/ClickUpTokenSource.cs` | Category check, key validation, readable errors; `backend.tests/` with `FakeScopeCredentials` + `WorkerHarness` |
+| Slack / ClickUp clients | `duplocloud-internal/prd-mgmt-extension` → `extensions/roadmap/backend/{SlackAccess,ClickUpAccess,ClickUpRateLimit}.cs` | Case-tolerant key lookup (`ScopeKeys.Find`), rate-limit handling |
+| Base URL from provider `AccountId` | `duplocloud/opensearch-extension` → `logs-dashboard/backend/OpenSearchConnection.cs`; `duplocloud/duploai-extension-pocs` → `jenkins-failure-triage` | Same convention 07-scope-credentials documents |
+| Skill reading `other_scopes/*.json` | `duplocloud/duploai-extension-pocs` → `jenkins-failure-triage/skills/.../jenkins.sh` | `jq`, never echoes the token |
+| Non-native cloud via extension | `duplocloud/duplo-ai-extension-baic-uniphore` → `skills/baic-terraform-actions/scripts/oci-env.sh` | OCI through `other_scopes/` (and the later first-class provider) |
+| **Worker polling via `DriftCadence`** | `duplocloud/duploai-extension-pull-request-review` → `PullRequestRepositoryWorker.cs` (30s); `duploai-extension-automation` → `ScheduledJobWorker.cs` (1 min); `prd-mgmt-extension` → `RoadmapFeatureWorker.cs` (1 h) | `ApplyAsync` records a baseline, `VerifyDriftAsync` re-scans Complete rows each cadence; scan errors go to `Result.LastError`, never fail the row |
 
 ## Generic vs customer-specific split
 
@@ -294,6 +311,145 @@ decision once `#55`/`#48` are actually being built, not something to design spec
 
 ---
 
+## 2026-10-13: Cloudflare Workers extension (`#58`) — MoreThanRewards ask
+
+**Origin.** Jason Brethorst (MoreThanRewards CEO/CTO) on Slack, 2026-10-13: their AI-generated/agentic code
+increasingly runs on **Cloudflare** (Workers), while human-built apps run on AWS under DuploCloud — can DuploCloud
+manage or monitor the Cloudflare side too? Today the answer is no: DuploCloud's native platforms are AWS/Azure/GCP
+(+ Kubernetes) and Cloudflare isn't in the supported third-party tools list. This row closes that gap through the
+extension framework. Classified **generic** and a 🏆 **3rd-party product extension** — nothing about it is
+MTR-specific; any customer shipping agentic code to Workers is a buyer.
+
+**Relationship to the no-code path.** Independently of this extension, Cloudflare's official API MCP server
+(`https://mcp.cloudflare.com/mcp`, accepts a scoped API token as a bearer header — so DuploCloud's "no OAuth for
+MCP" limitation isn't a blocker) can be registered under **AI Admin → MCP Servers** and bound to a scope, giving
+HelpDesk agents ad-hoc Cloudflare Q&A today. That's ticket-driven and on-demand only. `#58` adds what MCP can't:
+**continuous** inventory/deploy tracking, persisted change history, alerting, and a governed deploy path. ⚠️ Keep the
+two on **separate scopes** — per [07-scope-credentials](.claude/skills/duplo-extension-dev/reference/07-scope-credentials.md),
+a scope that carries an MCP server is *not* written to `other_scopes/`, so the extension's scope must be a plain
+`other` provider with no MCP binding.
+
+**~~Why it's NEW GROUND~~ — downgraded 2026-10-14.** Originally flagged as the first `other`-scope integration; the
+2026-10-14 sweep found several shipped ones (Jira, ClickUp, Slack, Jenkins, OpenSearch, OCI) and three Worker
+extensions polling on `DriftCadence` — see [Reference extensions in other repos](#reference-extensions-in-other-repos-2026-10-14).
+Remaining genuinely-new parts: the Cloudflare API surface itself and the deployment-history store.
+
+**MTR-specific priority (2026-10-14).** MTR is also moving public DNS to Cloudflare, and the recommended cutover
+front door is proxied Cloudflare records → APPSRV1 Elastic IP with plain HTTP to origin
+(`morethanrewards/vmware-migration/20260901/production-cutover-plan.md` §8). So for MTR the **zone/DNS checks pull
+forward into v1**: watched records still point at the expected origin, are proxied, and the zone SSL mode is the
+deliberate one (Flexible vs Full). Prerequisite: the Cloudflare admin invite / account-owned token (cutover plan
+§7.7) — still unconfirmed.
+
+### Shape — one bundle, three resource types, phased
+
+Flat sibling resources in one extension bundle (per
+[08-parent-child-and-menus](.claude/skills/duplo-extension-dev/reference/08-parent-child-and-menus.md)), shipped in order:
+
+| Phase | Resource | Mode | What it does |
+|---|---|---|---|
+| **v1 (build first)** | `CloudflareWorkerWatch` (+ zone/DNS checks, see MTR note) | **Worker** | Per scope (one Cloudflare account): poll Workers inventory + deployments on an interval; persist a `WorkerDeploymentEvent` history (script, version, deployed-at, author/trigger, traffic split); detect **new script / new deployment / script deleted / error-rate spike**; alert via Slack webhook. `EnrichResultAsync` shows live state (current version, last deploy, 24h requests/errors) on GET. |
+| v2 | `CloudflareWorkerDeploy` | **Agent** | Governed deploy for AI-generated Worker code: skill pulls the source (GitHub scope), runs `wrangler deploy --dry-run`, has the LLM summarize the diff + risk (new bindings, secrets, outbound hosts, route changes), waits on a human approval gate, then deploys and records the result. This is the "review step before agentic code goes live" pitch. |
+| v3 | `CloudflareZonePosture` | **Agent** / **No-provision** | Full DNS/WAF/SSL posture audit per zone (WAF managed rules, exposed `*.workers.dev` routes, beyond v1's record/SSL-mode checks). |
+
+### Credential convention (`other` scope)
+
+Operator registers it once (see "Registering the provider" in 07-scope-credentials):
+
+- Provider `type: "other"`, category `other`, `accountId` = `https://api.cloudflare.com/client/v4`
+- Credential `dataEx` keys (extension-defined, document in the SKILL.md):
+  - `accountId` — Cloudflare account ID
+  - `apiToken` — **account-owned** API token, `isSensitive: true` (account tokens auto-scope to one account)
+  - `slackWebhookUrl` — optional; or a second `other` scope dedicated to alerting (preferred, reusable by `#56`)
+- Token permissions, least privilege:
+  - v1: Account → **Workers Scripts: Read**, **Account Analytics: Read**, **Account Settings: Read** (audit logs)
+  - v2 adds: **Workers Scripts: Edit** — use a *separate* scope/token so v1 stays read-only
+  - v3 adds: Zone → **DNS: Read**, **Zone Settings: Read**, **Firewall Services: Read**
+- Worker-mode C# reads it via `IScopeCredentials.RequireOfCategoryAsync(e.Spec.ScopeIds, ProviderCategory.other, "Attach the Cloudflare scope.", ct)`
+  ([10-sdk-api](.claude/skills/duplo-extension-dev/reference/10-sdk-api.md)); Agent-mode skills read `other_scopes/<name>.json` with `jq`, never echoing the token.
+
+### Cloudflare API calls (v1)
+
+| Purpose | Call | Notes |
+|---|---|---|
+| Validate token on save | `GET /accounts/{account_id}/tokens/verify` | Account token. Fail the resource with a clear `faults[]` message if inactive/expired. |
+| Inventory | `GET /accounts/{account_id}/workers/scripts` | Diff against last snapshot → new/deleted scripts. |
+| Deployments | `GET /accounts/{account_id}/workers/scripts/{script_name}/deployments` | Confirmed 2026-10-13. First item = live deployment. Supports `since`/`until`, `per_page` ≤ 100. Perms: Workers Scripts Read. |
+| Versions | `GET /accounts/{account_id}/workers/scripts/{script_name}/versions` | Version metadata/annotations (deploy message, trigger) — *verify fields before relying on them*. |
+| Error/request rates | `POST /graphql` — `workersInvocationsAdaptive` dataset, grouped by `scriptName`, `status` | Sum requests/errors over the poll window; spike = errors/requests above a spec threshold. *Verify dataset name against current GraphQL schema.* |
+| Change attribution | `GET /accounts/{account_id}/audit_logs` | Who deployed/changed what — the AWS-CloudTrail equivalent. *Verify v1 vs v2 audit log endpoint.* |
+
+| Zone + DNS (MTR v1) | `GET /zones?account.id=…`, `GET /zones/{zone_id}/dns_records`, `GET /zones/{zone_id}/settings/ssl` | Perms: Zone → DNS Read, Zone Settings Read. Compare against spec's expected origin(s). |
+
+Respect Cloudflare's API rate limit (~1,200 req / 5 min per user token); poll interval default 5 min, back off via
+`WorkerState`. **Per-tick budget ~97s** (see rdsupgrade finding) — cap API calls per tick, fetch deployments only for
+scripts whose `modified_on` changed since the last scan.
+
+**Storage.** Keep deployment events as a bounded ring (last N, default 200) in `Result`, not an unbounded array; a
+second Mongo collection is possible (prd-mgmt-extension owns several) but not needed for v1.
+
+### Spec / status sketch (`CloudflareWorkerWatch`)
+
+- **Spec:** `ScopeIds` (Cloudflare scope, optional alert scope), `PollIntervalMinutes` (default 5),
+  `ScriptNameFilter` (glob, optional), `ErrorRateThresholdPct` (default 5), `MinRequestsForAlert` (default 100,
+  avoids noise on idle Workers), `AlertOnNewDeployment` (bool, default true), `AlertOnNewScript` (default true).
+- **Status / persisted:** `LastPolledAt`, `ScriptCount`, per-script `{name, currentVersionId, lastDeployedAt,
+  lastDeployedBy, requests24h, errors24h}`, plus append-only `WorkerDeploymentEvent` records (audit trail, not just
+  current state — same principle as `#56`'s incident records).
+
+### Acceptance criteria (v1)
+
+- [ ] Saving the resource with a bad/expired token fails fast with a readable fault; a good token goes `Active`.
+- [ ] A fresh `wrangler deploy` to any watched Worker appears as a `WorkerDeploymentEvent` within one poll interval,
+      with author/trigger populated when the API provides it, and fires one Slack alert (no duplicates on re-poll).
+- [ ] A newly created Worker and a deleted Worker are each detected and alerted once.
+- [ ] Error-rate spike above threshold (with ≥ `MinRequestsForAlert` requests) alerts once per breach, plus a
+      recovery message when it clears.
+- [ ] The token never appears in logs, ticket output, or the frontend.
+- [ ] Deleting the resource stops polling and leaves Cloudflare untouched (read-only extension —
+      [11-deprovisioning](.claude/skills/duplo-extension-dev/reference/11-deprovisioning.md) is a no-op).
+- [ ] README documents the `other`-scope convention so `#6`/`#30`/`#56` can copy it.
+
+### Build checklist
+
+0. Upgrade the dev-kit framework first (`scripts/upgrade_dev_kit.sh`) — this repo was on `7992e7a`; upstream adds
+   reference docs 16–20, the detail-page/lifecycle-rail template and ng-common-lib 0.3.0.
+1. Scaffold with `/duplo-extension` → `extensions/cloudflare/`; Worker shape from `samples/worker-appstack` +
+   `PullRequestRepositoryWorker` (baseline in `ApplyAsync`, scan in `VerifyDriftAsync`, `DriftCadence`).
+2. Write the `CloudflareClient` (thin typed `HttpClient`, bearer auth, pagination, 429 backoff) — credential source
+   modelled on `JiraCredentialSource`.
+3. Worker reconcile loop: snapshot → diff → persist events → alert. Unit-test the diff logic with canned JSON.
+4. Slack alert sender against an `other` scope — port `SlackAccess.cs` (prd-mgmt-extension); shared helper for `#56`.
+5. Frontend: list of Workers + deployment timeline per Worker (stock list/detail pattern, no new-ground UI).
+6. Test against a free Cloudflare account with 2–3 throwaway Workers before touching any customer account.
+7. Then v2 (`CloudflareWorkerDeploy`) only once v1 is in use.
+
+### Status (2026-10-14)
+
+v1 **built and deployed to helpdesk-dev01** as `extensions/cloudflare/` (`duplo.examples.cloudflare` 0.1.0). User
+narrowed v1 to **Workers inventory + deployments only** — error-rate, zone DNS/SSL and Slack moved to later phases.
+Logic is SDK-free (`backend/Cloudflare/`) with 34 xunit tests over canned JSON; save-time validation verified live
+(wrong-category and missing-key scopes both 400 with readable messages). **Live-verified 2026-10-14** on Prasanna's test account
+(`3e09f2ef80785725e920df838d8922f5`, scope `cloudflare-scope`): baseline picked up `duplo-watch-demo` with author/source/
+message; rescans ran every ~6 min (5 min `DriftCadence` + pickup); a `wrangler deploy --message` produced exactly one
+`Deployed` event ~3.5 min later with author, version and message. Gotcha found live: a token with a future TTL start
+date reports `status: active` but 401s every call — v0.1.2 now fails fast on `not_before`/expiry. Still to exercise:
+Worker add/delete events. helpdesk-dev01 is on SDK
+1.0.6, so the controller ships without `[AccessControl]`.
+
+### Open questions (ask Jason / MTR before v2)
+
+1. How many Cloudflare accounts and roughly how many Workers? (Sizing poll volume vs rate limit.)
+2. Visibility (v1) vs governing deploys (v2) — which matters more right now?
+3. How does agentic code reach Cloudflare today — `wrangler` from CI, Workers Builds (git-connected), or agents
+   deploying directly with their own tokens? Determines whether v2 can sit in the path at all.
+4. Do they use Workers Logs / Logpush already? If yes, a later option is pushing logs into DuploCloud observability
+   instead of polling GraphQL.
+5. Commercial: confirm with Nick Bradley (AE) / Andrew Park (SA) before promising timelines — this is new scope
+   beyond the VMware migration.
+
+---
+
 ## Tier 1 — reuse-ready
 
 | # | Extension idea | Source artifact(s) | Customer | Target type | Scope(s) | Classification | Status |
@@ -365,6 +521,7 @@ decision once `#55`/`#48` are actually being built, not something to design spec
 | 55 | Network Traffic Flow & Audit Overlay 🚩 **NEW GROUND** | Sourced from epic PFDO-904 ("Network Topology, Traffic Flows, and Audit Framework" — `[DevOps] Discussion - Network topology and traffic flow diagram` call, 2026-06-30, Nizar Jamal/Vinuja Jebaraj/Rohit Singh/Venkat Thiruvengadam/Prasanna Venkatesh). No existing script — idea-stage. Nizar's confirmed, still-unmet requirements from that call: bidirectional traffic visibility ("I can't have traffic initiated from inside a network I don't know about"), change attribution for manual AWS changes, and dynamic traffic-flow discovery overlaid on Duplo's existing static Terraform/live-state resource graph ("infrastructure is static, but app traffic is what makes dependencies dynamic"). Venkat confirmed on the call Duplo doesn't do this today, no committed timeline — this extension closes that gap directly rather than waiting on the core product roadmap. MVP: a **Worker** polls VPC Flow Logs (cost-preferred over an IDS appliance — the epic's cost trade-off is still open, don't build IDS ingestion for v1) + CloudTrail for network-relevant API calls (SG/route-table/VPN/TGW changes with actor identity), normalizes into `TrafficEdge` records, correlates src/dst against Duplo's already-discovered resource inventory, and flags edges with no match on either end as "undeclared" — the literal mechanism behind Nizar's quote. List/filter frontend is a stock pattern (reuse a `worker-appstack`-style list); a topology/graph visualization is genuinely new ground — no existing dev-kit sample renders a network graph, so treat that as its own build risk and ship list+filter first. Cleanest credential story in the whole backlog: `aws` only, all read-only Describe/LookupEvents/Logs calls, no `other_scopes` wiring needed. **2026-09-22:** sibling of `#56` (tunnel/route health) and `#48` (security posture) — see the [2026-09-22 refinement note](#2026-09-22-pfdo-904-network-visibility-refinement-sankets-ask--56-57) for how these compose. Build order: `#56` first. | Payfinia (idea source, PFDO-904) | **Worker** | `aws` | generic | Not started |
 | 56 | 🎯 **VPN/S2S Tunnel & Routing Health Monitor with Alerting** — build first | Sourced from PFDO-904 thread, 2026-09-22: Sanket's ask for proactive network visibility — "currently no visibility, only when customer says or transactions fail." Same root cause as `#18`'s Achieva prod incident (missing TGW route, discovered only after the fact) but framed as continuous monitoring instead of one-off reactive fix. No existing script — idea-stage, but low new-ground risk: AWS's `DescribeVpnConnections` API returns per-tunnel status (`UP`/`DOWN`), status message, and last-status-change time natively; `DescribeRouteTables` surfaces missing TGW/VGW routes the same way `#18`'s incident diagnosis did by hand. MVP: a **Worker** polls configured AWS scopes (multi-account: nonprod/prod/networking, per the 2026-07-09 comment on PFDO-904 confirming those three accounts) on an interval, snapshots tunnel + route state, and on a state transition (tunnel flips to `DOWN`, an expected route disappears) writes a persisted incident record (start/end/duration, an audit trail — not just current state) and fires an alert via a configurable channel (Slack incoming webhook first; email/SES as a second channel). Explicitly out of scope for v1: traffic-flow correlation (stays `#55`'s job), security-posture/drift scanning (stays `#48`'s job), auto-remediation (stays `#18`'s job — this Worker's alert is v1's hand-off point to a human; auto-invoking `#18`'s Agent from this Worker's alert is a v2 idea, not v1). Cleanest credential story: `aws` only, all read-only (`ec2:DescribeVpnConnections`, `ec2:DescribeRouteTables`, `ec2:DescribeTransitGatewayAttachments`), one `other`-scope webhook URL for alerting. | Payfinia (idea source, PFDO-904 / Sanket) | **Worker** | `aws`, `other` (alert webhook) | generic | Not started |
 | 57 | VPN Setup from Excel Intake (Customer Gateway Provisioner) | Sourced from the same PFDO-904 discussion — referenced as "Rohit already built an extension to set up VPN from an Excel input." **2026-09-22 repo sweep found no such extension or script exists** — only the customer-facing intake paperwork: `payfinia/repo/devops/vpn-setup/{OnPoint,iThink}/*.pdf` + `Payfinia-iTHINK AWS_VPN_Customer_Form {PROD,TEST} - 5.19.26.xlsx` (fields: customer gateway IP, BGP ASN, tunnel config), plus a blank template copy in claude-workspace. One PDF is named `...rohit-update iTHink.pdf`, confirming Rohit Singh authored the paperwork process, not code. Distinct *setup* concern from `#56`'s *monitoring* concern — would read an uploaded intake spreadsheet, create the Customer Gateway + VPN Connection + routes, and validate against `#56`'s tunnel-status check once live. Idea-stage only; not scoped for build. | Payfinia (idea source) | **Agent** | `aws` | generic | Not started |
+| 58 | 🏆 Cloudflare Workers Watch & Governed Deploy | Sourced from MoreThanRewards Slack ask, 2026-10-13 (Jason: agentic/AI-generated code runs on Cloudflare Workers, human apps on AWS — can Duplo manage/monitor Cloudflare?). No existing script — idea-stage. v1 **Worker** polls Workers inventory + deployments + GraphQL error rates, persists deployment history, alerts to Slack on new deploy/new script/error spike; v2 **Agent** governed `wrangler` deploy with LLM diff review + human approval; v3 optional DNS/WAF posture. Not new ground (2026-10-14): `other`-scope + `DriftCadence` patterns exist in other repos; for MTR, zone/DNS checks move into v1. Full design, API calls, token perms, acceptance criteria: [2026-10-13 Cloudflare section](#2026-10-13-cloudflare-workers-extension-58--morethanrewards-ask). | MoreThanRewards (idea source) | **Worker** (v1), **Agent** (v2) | `other` (Cloudflare API token), `other` (Slack webhook), `github` (v2) | generic | **v1 built + deployed (2026-10-14)** — `extensions/cloudflare/` (CloudflareWatch, Worker mode, 34 unit tests); live-verified on a test account (deploy detection) |
 
 ---
 
