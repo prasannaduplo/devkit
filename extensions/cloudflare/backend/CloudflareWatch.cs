@@ -26,6 +26,9 @@ public class CloudflareWatchSpec : BaseSpec
 
     /// <summary>How many change events to keep (newest first).</summary>
     public int HistoryLimit { get; set; } = CloudflareWatchService.DefaultHistoryLimit;
+
+    /// <summary>Stop scanning without losing history. Resuming rescans and records what changed meanwhile.</summary>
+    public bool Paused { get; set; }
 }
 
 [BsonIgnoreExtraElements]
@@ -40,6 +43,8 @@ public class CloudflareWatchResult : BaseResult
     /// <summary>The filter the current state was built with — a change re-baselines instead of reporting deletions.</summary>
     public string? AppliedFilter { get; set; }
     public DateTime? LastScannedAt { get; set; }
+    /// <summary>When the watch was paused; null while watching.</summary>
+    public DateTime? PausedAt { get; set; }
     public string? LastError { get; set; }
     public int ScriptCount { get; set; }
     /// <summary>Scripts whose deployments are still to be fetched (fetch cap hit this tick).</summary>

@@ -2,11 +2,11 @@
   "manifestVersion": "1.0",
   "id": "duplo.examples.cloudflare",
   "name": "Cloudflare",
-  "version": "0.1.2",
+  "version": "0.1.3",
 
   "sdkVersion": "REPLACED_BY_SKILL_FROM_sdk-version_ENDPOINT",
   "backend": {
-    "assemblyDir": "duplo.examples.cloudflare/0.1.2/backend",
+    "assemblyDir": "duplo.examples.cloudflare/0.1.3/backend",
     "entryAssembly": "Duplo.Extension.Cloudflare.dll"
   },
 

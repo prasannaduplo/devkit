@@ -15,6 +15,8 @@ namespace Duplo.Extension.Cloudflare;
 ///     scans; the first successful scan records the baseline (no events for Workers that already existed).
 ///   * <see cref="VerifyDriftAsync"/> runs every <see cref="DriftCadence"/> on Complete rows and rescans. Scan
 ///     errors land on <c>Result.LastError</c> and never fail the row, so a Cloudflare blip doesn't flap status.
+///   * <c>Spec.Paused</c> stops all scanning (Apply records PausedAt; drift ticks return immediately). Resuming
+///     is a spec edit → Apply → a normal (non-baseline) scan, so changes made while paused are still reported.
 ///   * Deletion touches nothing in Cloudflare — the watch is read-only.
 /// Each scan is one scripts list plus at most <see cref="MaxDeploymentFetchesPerTick"/> deployments calls, so a
 /// tick stays well inside the platform's ~97s worker budget; changed scripts beyond the cap roll to the next tick.
@@ -34,6 +36,14 @@ public class CloudflareWatchWorker : ResourceWorkerBase<CloudflareWatch, Cloudfl
     protected override async Task ApplyAsync(CloudflareWatch e, IServiceProvider scope, CancellationToken ct)
     {
         e.Result ??= new CloudflareWatchResult();
+        if (e.Spec?.Paused == true)
+        {
+            // Pause = a spec edit, so it arrives here. Touch nothing in Cloudflare; keep state + history.
+            e.Result.PausedAt ??= DateTime.UtcNow;
+            await SaveProgressAsync(scope, e, "Paused — not scanning", ct);
+            return;
+        }
+        e.Result.PausedAt = null;
         var (conn, client) = await CreateClientAsync(e, scope, ct);
 
         var verify = await client.VerifyTokenAsync(ct);
@@ -49,6 +59,9 @@ public class CloudflareWatchWorker : ResourceWorkerBase<CloudflareWatch, Cloudfl
 
     protected override async Task VerifyDriftAsync(CloudflareWatch e, IServiceProvider scope, CancellationToken ct)
     {
+        if (e.Spec?.Paused == true)
+            return;   // paused: no API calls, no writes
+
         try
         {
             var (_, client) = await CreateClientAsync(e, scope, ct);

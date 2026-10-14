@@ -55,7 +55,10 @@ On save, `ValidateSpecAsync` rejects a scope that is not category `other` or is 
   doesn't flap status. Only a failed Apply, such as a bad token, fails the row.
 - **Rate limit:** on a 429 it honours `Retry-After` once, waiting 1–30 s, then gives up until the next tick. Ticks stay
   well inside the platform's ~97 s worker budget.
-- **Delete:** no-op in Cloudflare.
+- **Pause / resume** (list or detail ⋮ menu → *Pause watching* / *Resume watching*): sets `spec.paused` via PATCH.
+  While paused the worker makes no Cloudflare calls and no writes; `Result.PausedAt` records when. Resuming re-applies
+  and runs a normal scan, so deploys/adds/deletes made during the pause are still reported (≤10 deploys per Worker).
+- **Delete** (⋮ menu, with confirmation): removes the watch and its history; nothing in Cloudflare is touched.
 
 ## Layout
 

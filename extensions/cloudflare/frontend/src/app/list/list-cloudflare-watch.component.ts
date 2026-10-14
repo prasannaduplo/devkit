@@ -29,6 +29,13 @@ import { StatusBadgeComponent } from '../shared/status-badge.component';
               <div ngbDropdownMenu>
                 <a ngbDropdownItem (click)="view(row)"><i data-feather="eye" class="mr-50"></i><span>View</span></a>
                 <a ngbDropdownItem (click)="edit(row)"><i data-feather="edit" class="mr-50"></i><span>Edit</span></a>
+                @if (row.spec?.paused) {
+                  <a ngbDropdownItem (click)="setPaused(row, false)"><i data-feather="play" class="mr-50"></i><span>Resume watching</span></a>
+                } @else {
+                  <a ngbDropdownItem (click)="setPaused(row, true)"><i data-feather="pause" class="mr-50"></i><span>Pause watching</span></a>
+                }
+                <div class="dropdown-divider"></div>
+                <a ngbDropdownItem class="text-danger" (click)="remove(row)"><i data-feather="trash-2" class="mr-50"></i><span>Delete</span></a>
               </div>
             </div>
           </ng-template>
@@ -61,6 +68,7 @@ import { StatusBadgeComponent } from '../shared/status-badge.component';
         <ngx-datatable-column name="Status" [flexGrow]="110" [maxWidth]="150">
           <ng-template ngx-datatable-cell-template let-row="row">
             <app-status-badge [status]="row.status"></app-status-badge>
+            @if (row.spec?.paused) { <span class="badge badge-light-secondary ml-50">Paused</span> }
             @if (row.result?.lastError) {
               <i data-feather="alert-triangle" class="text-warning ml-50" [title]="row.result.lastError"></i>
             }
@@ -129,6 +137,21 @@ export class ListCloudflareWatchComponent implements OnInit {
 
   protected view(r: CloudflareWatch): void {
     this.router.navigate(['view', r.id], { relativeTo: this.route });
+  }
+
+  protected setPaused(r: CloudflareWatch, paused: boolean): void {
+    this.svc.setPaused(r, paused).subscribe({ next: () => this.refresh(false), error: err => alert(this.msg(err)) });
+  }
+
+  protected remove(r: CloudflareWatch): void {
+    if (!confirm(`Delete watch "${r.name}"? Its change history is lost. Nothing in Cloudflare is changed.`)) {
+      return;
+    }
+    this.svc.delete(r.id).subscribe({ next: () => this.refresh(false), error: err => alert(this.msg(err)) });
+  }
+
+  private msg(err: any): string {
+    return err?.error?.errors || err?.error?.message || err?.message || 'Request failed';
   }
 
   protected edit(r: CloudflareWatch): void {

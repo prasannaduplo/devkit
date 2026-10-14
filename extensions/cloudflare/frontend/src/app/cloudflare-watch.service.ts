@@ -11,6 +11,7 @@ export interface CloudflareWatchSpec {
   scopeIds?: string[];
   scriptNameFilter?: string | null;
   historyLimit?: number;
+  paused?: boolean;
 }
 
 export interface WorkerScriptState {
@@ -43,6 +44,7 @@ export interface CloudflareWatchResult {
   baselineAt?: string;
   appliedFilter?: string;
   lastScannedAt?: string;
+  pausedAt?: string;
   lastError?: string;
   scriptCount?: number;
   pendingScripts?: number;
@@ -126,6 +128,12 @@ export class CloudflareWatchService {
     return this.http.patch(`${this.base()}/${id}`, { spec }).pipe(map((r: any) => this.unwrap(r)));
   }
 
+  /** Pause/resume = a PATCH of the FULL spec with `paused` flipped (spec is replaced wholesale). */
+  setPaused(item: CloudflareWatch, paused: boolean): Observable<CloudflareWatch> {
+    return this.update(item.id, { ...(item.spec ?? {}), paused });
+  }
+
+  /** Deletes the watch record only — nothing in Cloudflare is touched. */
   delete(id: string): Observable<any> {
     return this.http.delete(`${this.base()}/${id}`);
   }

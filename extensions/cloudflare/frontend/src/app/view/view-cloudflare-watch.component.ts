@@ -33,6 +33,7 @@ import { LifecyclePhase, LifecycleRailComponent, RailCallout, RailFact } from '.
             <div class="g-head-t">
               <h1>{{ it.name }}</h1>
               <app-status-badge [status]="it.status"></app-status-badge>
+              @if (it.spec?.paused) { <span class="badge badge-light-secondary">Paused</span> }
               @if (working()) {
                 <span class="dots-loader text-warning"><span></span><span></span><span></span></span>
               }
@@ -56,6 +57,13 @@ import { LifecyclePhase, LifecycleRailComponent, RailCallout, RailFact } from '.
               </button>
               <div ngbDropdownMenu>
                 <a ngbDropdownItem (click)="edit()"><i data-feather="edit" class="mr-50"></i> Edit</a>
+                @if (it.spec?.paused) {
+                  <a ngbDropdownItem (click)="setPaused(false)"><i data-feather="play" class="mr-50"></i> Resume watching</a>
+                } @else {
+                  <a ngbDropdownItem (click)="setPaused(true)"><i data-feather="pause" class="mr-50"></i> Pause watching</a>
+                }
+                <div class="dropdown-divider"></div>
+                <a ngbDropdownItem class="text-danger" (click)="remove()"><i data-feather="trash-2" class="mr-50"></i> Delete</a>
               </div>
             </div>
           </div>
@@ -218,7 +226,11 @@ export class ViewCloudflareWatchComponent implements OnInit {
           : 'Verify the token, list Workers and their live deployments',
         state: failed ? 'fail' : scanning ? 'now' : hasBaseline ? 'done' : 'todo',
       },
-      {
+      it.spec?.paused ? {
+        label: 'Paused',
+        subtitle: `Not scanning since ${this.fmt(r?.pausedAt)} — resume to catch up on changes`,
+        state: 'warn',
+      } : {
         label: 'Watching',
         subtitle: watching
           ? (r?.lastError ? `Last scan failed ${this.fmt(r?.lastScannedAt)}` : `Scanned ${this.fmt(r?.lastScannedAt || ws?.lastVerifiedAt)} · every 5 min`)
@@ -285,6 +297,29 @@ export class ViewCloudflareWatchComponent implements OnInit {
 
   protected fmt(v?: string): string {
     return v ? formatDate(v, 'medium', this.locale) : '—';
+  }
+
+  protected setPaused(paused: boolean): void {
+    const it = this.item();
+    if (!it) {
+      return;
+    }
+    this.svc.setPaused(it, paused).subscribe({ next: () => this.refresh(), error: err => alert(this.msg(err)) });
+  }
+
+  protected remove(): void {
+    const it = this.item();
+    if (!it || !confirm(`Delete watch "${it.name}"? Its change history is lost. Nothing in Cloudflare is changed.`)) {
+      return;
+    }
+    this.svc.delete(it.id).subscribe({
+      next: () => this.router.navigate(['../..'], { relativeTo: this.route }),
+      error: err => alert(this.msg(err)),
+    });
+  }
+
+  private msg(err: any): string {
+    return err?.error?.errors || err?.error?.message || err?.message || 'Request failed';
   }
 
   protected edit(): void {
