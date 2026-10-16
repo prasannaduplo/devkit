@@ -1,0 +1,230 @@
+<title>Network Diagram Options</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #F7F9FC; --surface: #FFFFFF; --ink: #131A2B; --muted: #5B6B82; --faint: #93A2B8; --border: #E3E8F0;
+    --accent: #2563EB; --accent-tint: #EAF1FF;
+    --subnet-public: #FFF4E5; --subnet-public-line: #D08A2B;
+    --subnet-private: #E8F0FF; --subnet-private-line: #3B6FD4;
+    --subnet-db: #E9F8EF; --subnet-db-line: #2F9E5C;
+    --edge: #8CA0BE; --edge-bad: #D64545;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0B1120; --surface: #121A2C; --ink: #EAF0FA; --muted: #94A7C4; --faint: #5B6B82; --border: #223049;
+      --accent: #5B9BFF; --accent-tint: #15233F;
+      --subnet-public: #2E2412; --subnet-public-line: #D08A2B;
+      --subnet-private: #15203A; --subnet-private-line: #5B8FEF;
+      --subnet-db: #102A1C; --subnet-db-line: #4ADE80;
+      --edge: #4C5C78; --edge-bad: #F38A8A;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0B1120; --surface: #121A2C; --ink: #EAF0FA; --muted: #94A7C4; --faint: #5B6B82; --border: #223049;
+    --accent: #5B9BFF; --accent-tint: #15233F;
+    --subnet-public: #2E2412; --subnet-public-line: #D08A2B;
+    --subnet-private: #15203A; --subnet-private-line: #5B8FEF;
+    --subnet-db: #102A1C; --subnet-db-line: #4ADE80;
+    --edge: #4C5C78; --edge-bad: #F38A8A;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body { background: var(--bg); color: var(--ink); font-family: 'IBM Plex Sans', sans-serif; }
+  .wrap { max-width: 1000px; margin: 0 auto; padding-inline: 20px; padding-block: 32px 60px; }
+  h1 { font-size: 24px; font-weight: 700; letter-spacing: -0.01em; margin: 0; }
+  .sub { color: var(--muted); font-size: 14.5px; margin-top: 8px; max-width: 70ch; }
+  .tabs { display: flex; gap: 8px; margin-top: 28px; flex-wrap: wrap; }
+  .tab-btn { font-family: inherit; font-size: 13.5px; font-weight: 600; padding: 9px 16px; border-radius: 9px; border: 1px solid var(--border); background: var(--surface); color: var(--muted); cursor: pointer; }
+  .tab-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .panel { display: none; margin-top: 20px; }
+  .panel.active { display: block; }
+  .diagram-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 20px; overflow-x: auto; }
+  .diagram-card svg { display: block; margin: 0 auto; min-width: 640px; }
+  .verdict { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 16px; }
+  @media (max-width: 620px) { .verdict { grid-template-columns: 1fr; } }
+  .v-card { border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; font-size: 13.5px; }
+  .v-card .v-tag { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 6px; }
+  .v-card.good .v-tag { color: #2F9E5C; } .v-card.bad .v-tag { color: var(--edge-bad); }
+  .v-card ul { margin: 0; padding-left: 18px; color: var(--muted); }
+  .v-card li { margin-bottom: 4px; }
+  .legend { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 14px; font-size: 12px; color: var(--muted); }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .swatch { width: 10px; height: 10px; border-radius: 2px; }
+  text { font-family: 'IBM Plex Sans', sans-serif; }
+  .mono { font-family: 'IBM Plex Mono', monospace; }
+</style>
+
+<div class="wrap">
+  <h1>Network diagram — three layout options</h1>
+  <p class="sub">Same example VPC, same traffic data, three different ways to draw it. Picking one before building the real (data-driven) version — this is a comparison mockup, not the actual extension.</p>
+
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="a">A · Force-directed graph</button>
+    <button class="tab-btn" data-tab="b">B · Nested AWS-style</button>
+    <button class="tab-btn" data-tab="c">C · Swim lanes</button>
+  </div>
+
+  <!-- ============ PANEL A: force-directed ============ -->
+  <div class="panel active" id="panel-a">
+    <div class="diagram-card">
+      <svg viewBox="0 0 640 380" width="640" height="380">
+        <line x1="330" y1="60" x2="330" y2="120" stroke="var(--edge)" stroke-width="2" marker-end="url(#arrow)"/>
+        <line x1="330" y1="150" x2="200" y2="210" stroke="var(--edge)" stroke-width="2" marker-end="url(#arrow)"/>
+        <line x1="330" y1="150" x2="460" y2="210" stroke="var(--edge)" stroke-width="2" marker-end="url(#arrow)"/>
+        <line x1="200" y1="240" x2="330" y2="300" stroke="var(--edge)" stroke-width="2" marker-end="url(#arrow)"/>
+        <line x1="460" y1="240" x2="330" y2="300" stroke="var(--edge)" stroke-width="2" marker-end="url(#arrow)"/>
+        <line x1="460" y1="210" x2="580" y2="150" stroke="var(--edge-bad)" stroke-width="2.5" stroke-dasharray="5 4" marker-end="url(#arrow-bad)"/>
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0L10,5L0,10z" fill="var(--edge)"/></marker>
+          <marker id="arrow-bad" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0L10,5L0,10z" fill="var(--edge-bad)"/></marker>
+        </defs>
+        <!-- IGW -->
+        <circle cx="330" cy="45" r="22" fill="var(--subnet-public)" stroke="var(--subnet-public-line)" stroke-width="2"/>
+        <text x="330" y="50" text-anchor="middle" font-size="11" fill="var(--ink)" font-weight="600">IGW</text>
+        <!-- ALB -->
+        <circle cx="330" cy="150" r="24" fill="var(--subnet-public)" stroke="var(--subnet-public-line)" stroke-width="2"/>
+        <text x="330" y="155" text-anchor="middle" font-size="11" fill="var(--ink)" font-weight="600">ALB</text>
+        <!-- app1 -->
+        <circle cx="200" cy="225" r="24" fill="var(--subnet-private)" stroke="var(--subnet-private-line)" stroke-width="2"/>
+        <text x="200" y="230" text-anchor="middle" font-size="10.5" fill="var(--ink)" font-weight="600">app-1</text>
+        <!-- app2 -->
+        <circle cx="460" cy="225" r="24" fill="var(--subnet-private)" stroke="var(--subnet-private-line)" stroke-width="2"/>
+        <text x="460" y="230" text-anchor="middle" font-size="10.5" fill="var(--ink)" font-weight="600">app-2</text>
+        <!-- rds -->
+        <circle cx="330" cy="320" r="24" fill="var(--subnet-db)" stroke="var(--subnet-db-line)" stroke-width="2"/>
+        <text x="330" y="325" text-anchor="middle" font-size="10.5" fill="var(--ink)" font-weight="600">rds</text>
+        <!-- undeclared external -->
+        <circle cx="590" cy="135" r="22" fill="none" stroke="var(--edge-bad)" stroke-width="2" stroke-dasharray="4 3"/>
+        <text x="590" y="140" text-anchor="middle" font-size="9.5" fill="var(--edge-bad)" font-weight="600">?</text>
+        <text x="590" y="168" text-anchor="middle" font-size="9.5" fill="var(--edge-bad)">unknown IP</text>
+      </svg>
+      <div class="legend">
+        <span><span class="swatch" style="background:var(--subnet-public-line)"></span>public subnet resource</span>
+        <span><span class="swatch" style="background:var(--subnet-private-line)"></span>private subnet resource</span>
+        <span><span class="swatch" style="background:var(--subnet-db-line)"></span>database subnet resource</span>
+        <span><span class="swatch" style="background:var(--edge-bad)"></span>undeclared traffic</span>
+      </div>
+    </div>
+    <div class="verdict">
+      <div class="v-card good"><div class="v-tag">Fits well</div><ul><li>Mature libraries do the layout math (Cytoscape.js, d3-force) — least custom code</li><li>Natural fit for "nodes + traffic edges," which is literally the data shape</li><li>Handles an unpredictable number of resources without a layout rewrite</li></ul></div>
+      <div class="v-card bad"><div class="v-tag">Trade-off</div><ul><li>Layout is physics-based, not fixed — subnet grouping is a loose visual cue, not a hard boundary</li><li>Doesn't read as "the architecture diagram" someone expects from an AWS console</li></ul></div>
+    </div>
+  </div>
+
+  <!-- ============ PANEL B: nested AWS-style ============ -->
+  <div class="panel" id="panel-b">
+    <div class="diagram-card">
+      <svg viewBox="0 0 640 380" width="640" height="380">
+        <rect x="20" y="20" width="600" height="340" rx="10" fill="none" stroke="var(--border)" stroke-width="2" stroke-dasharray="6 4"/>
+        <text x="34" y="42" font-size="11" fill="var(--muted)" font-weight="600">VPC · vpc-app-nonprod</text>
+
+        <rect x="40" y="56" width="560" height="90" rx="8" fill="var(--subnet-public)" stroke="var(--subnet-public-line)" stroke-width="1.5"/>
+        <text x="52" y="74" font-size="10.5" fill="var(--subnet-public-line)" font-weight="700">PUBLIC SUBNET</text>
+        <rect x="60" y="86" width="70" height="46" rx="6" fill="var(--surface)" stroke="var(--subnet-public-line)"/>
+        <text x="95" y="113" text-anchor="middle" font-size="11" font-weight="600">IGW</text>
+        <rect x="170" y="86" width="70" height="46" rx="6" fill="var(--surface)" stroke="var(--subnet-public-line)"/>
+        <text x="205" y="113" text-anchor="middle" font-size="11" font-weight="600">ALB</text>
+        <rect x="280" y="86" width="70" height="46" rx="6" fill="var(--surface)" stroke="var(--subnet-public-line)"/>
+        <text x="315" y="113" text-anchor="middle" font-size="11" font-weight="600">NAT GW</text>
+
+        <rect x="40" y="160" width="560" height="90" rx="8" fill="var(--subnet-private)" stroke="var(--subnet-private-line)" stroke-width="1.5"/>
+        <text x="52" y="178" font-size="10.5" fill="var(--subnet-private-line)" font-weight="700">PRIVATE SUBNET</text>
+        <rect x="60" y="190" width="70" height="46" rx="6" fill="var(--surface)" stroke="var(--subnet-private-line)"/>
+        <text x="95" y="217" text-anchor="middle" font-size="10.5" font-weight="600">app-1</text>
+        <rect x="170" y="190" width="70" height="46" rx="6" fill="var(--surface)" stroke="var(--subnet-private-line)"/>
+        <text x="205" y="217" text-anchor="middle" font-size="10.5" font-weight="600">app-2</text>
+
+        <rect x="40" y="264" width="560" height="76" rx="8" fill="var(--subnet-db)" stroke="var(--subnet-db-line)" stroke-width="1.5"/>
+        <text x="52" y="282" font-size="10.5" fill="var(--subnet-db-line)" font-weight="700">DATABASE SUBNET</text>
+        <rect x="60" y="294" width="70" height="40" rx="6" fill="var(--surface)" stroke="var(--subnet-db-line)"/>
+        <text x="95" y="318" text-anchor="middle" font-size="11" font-weight="600">rds</text>
+
+        <path d="M95,132 L95,190" stroke="var(--edge)" stroke-width="2" fill="none" marker-end="url(#arrowB)"/>
+        <path d="M205,132 L95,190" stroke="var(--edge)" stroke-width="2" fill="none" marker-end="url(#arrowB)"/>
+        <path d="M205,132 L205,190" stroke="var(--edge)" stroke-width="2" fill="none" marker-end="url(#arrowB)"/>
+        <path d="M95,236 L95,294" stroke="var(--edge)" stroke-width="2" fill="none" marker-end="url(#arrowB)"/>
+        <path d="M205,236 Q150,265 130,308" stroke="var(--edge)" stroke-width="2" fill="none" marker-end="url(#arrowB)"/>
+        <path d="M240,213 C 420,213 480,120 580,70" stroke="var(--edge-bad)" stroke-width="2.5" stroke-dasharray="5 4" fill="none" marker-end="url(#arrowB-bad)"/>
+        <text x="520" y="60" font-size="9.5" fill="var(--edge-bad)" font-weight="600">undeclared →</text>
+        <defs>
+          <marker id="arrowB" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0L10,5L0,10z" fill="var(--edge)"/></marker>
+          <marker id="arrowB-bad" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0L10,5L0,10z" fill="var(--edge-bad)"/></marker>
+        </defs>
+      </svg>
+      <div class="legend">
+        <span><span class="swatch" style="background:var(--subnet-public-line)"></span>public subnet</span>
+        <span><span class="swatch" style="background:var(--subnet-private-line)"></span>private subnet</span>
+        <span><span class="swatch" style="background:var(--subnet-db-line)"></span>database subnet</span>
+        <span><span class="swatch" style="background:var(--edge-bad)"></span>undeclared traffic</span>
+      </div>
+    </div>
+    <div class="verdict">
+      <div class="v-card good"><div class="v-tag">Fits well</div><ul><li>Reads exactly like the AWS console / Lucidchart diagrams the customer actually asked for</li><li>Subnet boundaries are real, not a visual suggestion — directly answers "what's in which network"</li></ul></div>
+      <div class="v-card bad"><div class="v-tag">Trade-off</div><ul><li>Containment layout (boxes sized to fit their contents, nested correctly) is real layout code to write and get right</li><li>Edges crossing subnet boundaries get messy fast with more than a handful of resources</li></ul></div>
+    </div>
+  </div>
+
+  <!-- ============ PANEL C: swim lanes ============ -->
+  <div class="panel" id="panel-c">
+    <div class="diagram-card">
+      <svg viewBox="0 0 640 360" width="640" height="360">
+        <rect x="20" y="20" width="600" height="80" rx="8" fill="var(--subnet-public)" stroke="var(--subnet-public-line)" stroke-width="1.5"/>
+        <text x="32" y="38" font-size="10.5" fill="var(--subnet-public-line)" font-weight="700">PUBLIC</text>
+        <rect x="40" y="48" width="64" height="40" rx="6" fill="var(--surface)" stroke="var(--subnet-public-line)"/>
+        <text x="72" y="72" text-anchor="middle" font-size="10.5" font-weight="600">IGW</text>
+        <rect x="120" y="48" width="64" height="40" rx="6" fill="var(--surface)" stroke="var(--subnet-public-line)"/>
+        <text x="152" y="72" text-anchor="middle" font-size="10.5" font-weight="600">ALB</text>
+
+        <rect x="20" y="140" width="600" height="80" rx="8" fill="var(--subnet-private)" stroke="var(--subnet-private-line)" stroke-width="1.5"/>
+        <text x="32" y="158" font-size="10.5" fill="var(--subnet-private-line)" font-weight="700">PRIVATE</text>
+        <rect x="40" y="168" width="64" height="40" rx="6" fill="var(--surface)" stroke="var(--subnet-private-line)"/>
+        <text x="72" y="192" text-anchor="middle" font-size="10.5" font-weight="600">app-1</text>
+        <rect x="120" y="168" width="64" height="40" rx="6" fill="var(--surface)" stroke="var(--subnet-private-line)"/>
+        <text x="152" y="192" text-anchor="middle" font-size="10.5" font-weight="600">app-2</text>
+        <rect x="480" y="168" width="100" height="40" rx="6" fill="var(--surface)" stroke="var(--edge-bad)" stroke-dasharray="4 3"/>
+        <text x="530" y="192" text-anchor="middle" font-size="10" font-weight="600" fill="var(--edge-bad)">unknown IP</text>
+
+        <rect x="20" y="260" width="600" height="80" rx="8" fill="var(--subnet-db)" stroke="var(--subnet-db-line)" stroke-width="1.5"/>
+        <text x="32" y="278" font-size="10.5" fill="var(--subnet-db-line)" font-weight="700">DATABASE</text>
+        <rect x="40" y="288" width="64" height="40" rx="6" fill="var(--surface)" stroke="var(--subnet-db-line)"/>
+        <text x="72" y="312" text-anchor="middle" font-size="10.5" font-weight="600">rds</text>
+
+        <path d="M72,88 L72,168" stroke="var(--edge)" stroke-width="2" fill="none" marker-end="url(#arrowC)"/>
+        <path d="M152,88 L72,168" stroke="var(--edge)" stroke-width="2" fill="none" marker-end="url(#arrowC)"/>
+        <path d="M152,88 L152,168" stroke="var(--edge)" stroke-width="2" fill="none" marker-end="url(#arrowC)"/>
+        <path d="M72,208 L72,288" stroke="var(--edge)" stroke-width="2" fill="none" marker-end="url(#arrowC)"/>
+        <path d="M152,208 Q110,250 90,288" stroke="var(--edge)" stroke-width="2" fill="none" marker-end="url(#arrowC)"/>
+        <path d="M184,188 L480,188" stroke="var(--edge-bad)" stroke-width="2.5" stroke-dasharray="5 4" fill="none" marker-end="url(#arrowC-bad)"/>
+        <defs>
+          <marker id="arrowC" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0L10,5L0,10z" fill="var(--edge)"/></marker>
+          <marker id="arrowC-bad" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0L10,5L0,10z" fill="var(--edge-bad)"/></marker>
+        </defs>
+      </svg>
+      <div class="legend">
+        <span><span class="swatch" style="background:var(--subnet-public-line)"></span>public lane</span>
+        <span><span class="swatch" style="background:var(--subnet-private-line)"></span>private lane</span>
+        <span><span class="swatch" style="background:var(--subnet-db-line)"></span>database lane</span>
+        <span><span class="swatch" style="background:var(--edge-bad)"></span>undeclared traffic</span>
+      </div>
+    </div>
+    <div class="verdict">
+      <div class="v-card good"><div class="v-tag">Fits well</div><ul><li>Simplest layout to implement reliably — fixed rows, no containment math, no physics simulation</li><li>An edge jumping sideways within a lane (like the undeclared one here) is immediately obvious</li></ul></div>
+      <div class="v-card bad"><div class="v-tag">Trade-off</div><ul><li>Loses real subnet geography (multiple subnets of the same tier collapse into one lane)</li><li>Doesn't scale gracefully much past a handful of resources per lane before rows get crowded</li></ul></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById('panel-' + btn.dataset.tab).classList.add('active');
+    });
+  });
+</script>

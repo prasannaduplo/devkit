@@ -1,0 +1,81 @@
+{
+  "manifestVersion": "1.0",
+  "id": "duplo.examples.netmap",
+  "name": "Network Map",
+  "version": "0.3.3",
+  "sdkVersion": "REPLACED_BY_SKILL_FROM_sdk-version_ENDPOINT",
+  "backend": {
+    "assemblyDir": "duplo.examples.netmap/0.3.3/backend",
+    "entryAssembly": "Duplo.Extension.NetMap.dll"
+  },
+  "resources": [
+    {
+      "ticketOriginType": "NetworkBlueprint",
+      "restSegment": "extensions/networkblueprints",
+      "subType": "network-blueprint",
+      "archetype": "typed",
+      "registrar": "DevOpsResource",
+      "entityType": "Duplo.Extension.NetMap.NetworkBlueprint",
+      "specType": "Duplo.Extension.NetMap.NetworkBlueprintSpec",
+      "resultType": "Duplo.Extension.NetMap.NetworkBlueprintResult",
+      "hooksType": "Duplo.Extension.NetMap.NetworkBlueprintHooks",
+      "serviceType": "Duplo.Extension.NetMap.NetworkBlueprintService"
+    },
+    {
+      "ticketOriginType": "NetworkMap",
+      "restSegment": "extensions/networkmaps",
+      "subType": "network-map",
+      "archetype": "typed",
+      "registrar": "DevOpsResource",
+      "entityType": "Duplo.Extension.NetMap.NetworkMap",
+      "specType": "Duplo.Extension.NetMap.NetworkMapSpec",
+      "resultType": "Duplo.Extension.NetMap.NetworkMapResult",
+      "hooksType": "Duplo.Extension.NetMap.NetworkMapHooks",
+      "serviceType": "Duplo.Extension.NetMap.NetworkMapService"
+    },
+    {
+      "ticketOriginType": "NetworkSnapshot",
+      "restSegment": "extensions/networksnapshots",
+      "subType": "network-snapshot",
+      "archetype": "typed",
+      "registrar": "DevOpsResource",
+      "entityType": "Duplo.Extension.NetMap.NetworkSnapshot",
+      "specType": "Duplo.Extension.NetMap.NetworkSnapshotSpec",
+      "resultType": "Duplo.Extension.NetMap.NetworkSnapshotResult",
+      "hooksType": "Duplo.Extension.NetMap.NetworkSnapshotHooks",
+      "serviceType": "Duplo.Extension.NetMap.NetworkSnapshotService"
+    }
+  ],
+  "frontend": {
+    "remote": {
+      "remoteName": "duploExtensionNetMap",
+      "remoteEntry": "/v1/aiservicedesk/extensions/duplo.examples.netmap/fe/remoteEntry.json",
+      "exposedModule": "./Extension",
+      "type": "module"
+    },
+    "menus": [
+      {
+        "id": "duplo.examples.netmap-devops",
+        "title": "DevOps",
+        "type": "collapsible-section",
+        "children": [
+          {
+            "id": "duplo.examples.netmap-network-map",
+            "title": "Network Map",
+            "type": "item",
+            "matIcon": "chart-bubble",
+            "relativeUrl": "extensions/networkmaps",
+            "order": 47
+          }
+        ]
+      }
+    ],
+    "routes": [
+      {
+        "path": "extensions/networkmaps",
+        "resourceType": "NetworkMap",
+        "subType": "network-map"
+      }
+    ]
+  }
+}

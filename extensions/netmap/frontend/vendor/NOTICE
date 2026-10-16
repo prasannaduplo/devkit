@@ -1,0 +1,38 @@
+PROPRIETARY -- NOT OPEN SOURCE
+================================================================================
+
+The npm tarball in this directory:
+
+    duplocloud-internal-ng-common-lib-*.tgz
+
+is the DuploCloud platform UI library `@duplocloud-internal/ng-common-lib`.
+
+IT IS THE PROPRIETARY INTELLECTUAL PROPERTY OF DUPLOCLOUD, INC.
+Copyright 2026 DuploCloud, Inc. All rights reserved.
+
+It is the compiled output of DuploCloud's private duplo-ui portal source code. It
+is published only to a private, access-controlled registry and carries no license
+of its own. It is committed to this repository solely so that you can build
+extensions without credentials for that registry.
+
+THE APACHE LICENSE THAT COVERS THE REST OF THIS REPOSITORY DOES NOT COVER THIS
+FILE. It is licensed separately, as the "Licensed Library", under the terms in
+TERMS.md at the root of the DuploCloud Extension Developer Kit repository.
+
+You MAY:
+  - install it and compile your extension code against it
+  - ship the portions of it that your build incorporates into your compiled
+    extension bundle, as part of that bundle, for installation onto a DuploCloud
+    platform you are licensed to use
+
+You MAY NOT:
+  - modify it or create derivative works of it
+  - reverse engineer, decompile, or deobfuscate it
+  - unpack, repackage, or redistribute it on its own
+  - publish it to any package registry, public or private
+  - commit it to any repository other than this one
+  - remove or alter this notice
+
+See Sections 1, 2, and 4 of TERMS.md for the controlling terms.
+
+Questions: sales@duplocloud.net

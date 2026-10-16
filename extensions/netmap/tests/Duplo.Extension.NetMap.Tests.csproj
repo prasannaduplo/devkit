@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Unit tests for the SDK-free netmap core (backend/Core/**), compiled here as linked files so the tests need no
+    Duplo SDK assemblies. Lives beside backend/ (not inside it) so build-extension.sh ignores it.
+    Run (repo root): docker run (rm flag) -v "$PWD/extensions/netmap":/w -w /w/tests \
+      quay.io/duplocloud/duplo-extension-builder:latest dotnet test (nologo flag)
+  -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="../backend/Core/**/*.cs" LinkBase="Core" />
+    <None Include="fixtures/**/*.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="AWSSDK.EC2" Version="4.*" />
+    <PackageReference Include="AWSSDK.ElasticLoadBalancingV2" Version="4.*" />
+    <PackageReference Include="AWSSDK.ElasticLoadBalancing" Version="4.*" />
+    <PackageReference Include="AWSSDK.NetworkFirewall" Version="4.*" />
+    <PackageReference Include="AWSSDK.Route53" Version="4.*" />
+    <PackageReference Include="AWSSDK.Route53Resolver" Version="4.*" />
+    <PackageReference Include="MongoDB.Bson" Version="3.5.0" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
+    <PackageReference Include="xunit" Version="2.6.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.5.4" />
+    <PackageReference Include="FluentAssertions" Version="6.12.0" />
+  </ItemGroup>
+
+</Project>
