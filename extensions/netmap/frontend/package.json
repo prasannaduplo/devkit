@@ -3,7 +3,8 @@
   "version": "0.1.0",
   "description": "Pipeline Check extension — Angular Native-Federation remote (list/add/view).",
   "scripts": {
-    "build": "ng build --configuration production"
+    "build": "ng build --configuration production",
+    "test": "vitest run"
   },
   "private": true,
   "overrides": {
@@ -50,6 +51,7 @@
     "@angular/build": "22.0.9",
     "@angular/cli": "22.0.9",
     "@angular/compiler-cli": "^22.1.0",
-    "typescript": "6.0.3"
+    "typescript": "6.0.3",
+    "vitest": "^4.1.12"
   }
 }
