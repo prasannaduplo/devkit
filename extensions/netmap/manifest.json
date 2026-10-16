@@ -2,10 +2,10 @@
   "manifestVersion": "1.0",
   "id": "duplo.examples.netmap",
   "name": "Network Map",
-  "version": "0.3.4",
+  "version": "0.4.0",
   "sdkVersion": "REPLACED_BY_SKILL_FROM_sdk-version_ENDPOINT",
   "backend": {
-    "assemblyDir": "duplo.examples.netmap/0.3.4/backend",
+    "assemblyDir": "duplo.examples.netmap/0.4.0/backend",
     "entryAssembly": "Duplo.Extension.NetMap.dll"
   },
   "resources": [
@@ -64,7 +64,7 @@
             "title": "Network Map",
             "type": "item",
             "matIcon": "chart-bubble",
-            "relativeUrl": "extensions/networkmaps",
+            "relativeUrl": "extensions/networkblueprints",
             "order": 47
           }
         ]
@@ -72,9 +72,9 @@
     ],
     "routes": [
       {
-        "path": "extensions/networkmaps",
-        "resourceType": "NetworkMap",
-        "subType": "network-map"
+        "path": "extensions/networkblueprints",
+        "resourceType": "NetworkBlueprint",
+        "subType": "network-blueprint"
       }
     ]
   }
