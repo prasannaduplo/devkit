@@ -87,7 +87,7 @@ export function vpnRows(idx: GraphIndex): VpnRow[] {
       bgpAsn: str(cgw?.attrs?.['bgpAsn']) ?? '',
       attachedTo: nameOf(idx, vpnAnchorOf(idx, v)),
       staticRoutes: strs(a['staticRoutes']).join(', '),
-      severity: total > 0 && up < 2 ? 'warn' : 'ok',
+      severity: (total > 0 && up < 2 ? 'warn' : 'ok') as Sev,
     };
   }).sort(byText(r => r.name));
 }
@@ -174,7 +174,7 @@ export function flowLogRows(idx: GraphIndex): FlowLogRow[] {
       : subnets.length > 0 && covered.length === subnets.length ? 'all subnets'
       : covered.length > 0 ? 'some subnets' : 'none';
     const destinations = [...new Set(all.map(c => `${str(c.attrs?.['destinationType']) ?? '?'}: ${str(c.attrs?.['destination']) ?? '?'}`))].join(' · ');
-    return { id: net.id, network: net.name, coverage, destinations: destinations || '—', severity: coverage === 'network' || coverage === 'all subnets' ? 'ok' : 'warn' };
+    return { id: net.id, network: net.name, coverage, destinations: destinations || '—', severity: (coverage === 'network' || coverage === 'all subnets' ? 'ok' : 'warn') as Sev };
   }).sort(byText(r => r.network));
 }
 
