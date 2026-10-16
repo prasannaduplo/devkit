@@ -6,3 +6,6 @@ frontend/out-tsc/
 pkg/
 *.zip
 tests/.local/
+
+# recorded dev snapshots (real account data, local only)
+tests/fixtures/recorded/
