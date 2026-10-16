@@ -36,6 +36,7 @@
     "angularx-flatpickr": "^8.1.0",
     "bootstrap": "^4.6.2",
     "echarts": "^6.1.0",
+    "elkjs": "^0.12.0",
     "flatpickr": "^4.6.9",
     "marked": "^18.0.7",
     "monaco-editor": "^0.55.1",
