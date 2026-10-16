@@ -193,6 +193,8 @@ export class NetworkMapComponent {
 
   protected setLevel(l: Level): void {
     if (l === 4 && !this.canL4()) return;
+    // L1 is the overview: a focus left over from drilling in would hide every other network
+    if (l === 1) this.focusId.set(undefined);
     this.level.set(l);
   }
 
