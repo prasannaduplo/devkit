@@ -74,11 +74,26 @@ const COLS: Record<string, NmColumn[]> = {
   imports: [CommonLibComponentsModule, StatusBadgeComponent, IconSpriteComponent, NetworkMapComponent, NmTableComponent, InventoryTabComponent],
   styleUrl: '../shared/detail-page.scss',
   styles: [`
-    .nm-progress { margin: 12px 0; padding: 8px 12px; border-radius: 8px; background: #e3f4f6; color: #096570; font-size: .85rem; }
-    .nm-progress .bar { height: 4px; background: #c8e9ed; border-radius: 2px; margin-top: 6px; }
-    .nm-progress .bar > div { height: 4px; background: #0d8f9e; border-radius: 2px; transition: width .4s; }
-    .nm-caps { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin: 12px 0; }
-    .nm-cap { border: 1px solid #ebe9f1; border-radius: 8px; padding: 8px 10px; cursor: pointer; background: #fff; }
+    .nm-progress { margin: 12px 0; padding: 10px 14px; border-radius: 10px; background: #eef8f9; border: 1px solid #c8e9ed; color: #096570; font-size: .85rem; }
+    .nm-progress .top { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+    .nm-progress .now { font-weight: 700; }
+    .nm-progress .when { color: #4d8d95; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .nm-progress .bar { position: relative; height: 6px; background: #d5eef1; border-radius: 3px; margin: 8px 0; overflow: hidden; }
+    .nm-progress .bar > div { height: 6px; border-radius: 3px; transition: width .6s ease; background: repeating-linear-gradient(45deg, #0d8f9e 0 10px, #19a9b9 10px 20px); background-size: 28px 28px; animation: nm-stripe 1s linear infinite; }
+    .nm-progress .bar.queued > div { width: 30% !important; position: absolute; animation: nm-slide 1.4s ease-in-out infinite; }
+    @keyframes nm-stripe { to { background-position: 28px 0; } }
+    @keyframes nm-slide { 0% { left: -30%; } 100% { left: 100%; } }
+    .nm-steps { display: flex; flex-wrap: wrap; gap: 4px 6px; }
+    .nm-step { font-size: .74rem; border-radius: 1rem; padding: 1px 8px; background: #fff; border: 1px solid #d5eef1; color: #6e8d92; white-space: nowrap; }
+    .nm-step.done { color: #1d7a3e; border-color: #bfe5cc; }
+    .nm-step.failed, .nm-step.denied { color: #b42318; border-color: #f3c7c3; }
+    .nm-step.current { color: #096570; border-color: #0d8f9e; font-weight: 700; animation: nm-pulse 1.2s ease-in-out infinite; }
+    @keyframes nm-pulse { 50% { background: #d5eef1; } }
+    @media (prefers-reduced-motion: reduce) { .nm-progress .bar > div, .nm-step.current { animation: none; } }
+    .nm-caps { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 6px; margin: 12px 0; }
+    @media (max-width: 1100px) { .nm-caps { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+    .nm-cap { border: 1px solid #ebe9f1; border-radius: 8px; padding: 6px 8px; cursor: pointer; background: #fff; min-width: 0; }
+    .nm-cap .r { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .nm-cap .t { font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; color: #6e6b7b; font-weight: 600; }
     .nm-cap .s { font-weight: 700; font-size: .9rem; }
     .nm-cap .s.available { color: #1d7a3e; } .nm-cap .s.partial { color: #9a5b0c; } .nm-cap .s.not-readable { color: #b42318; } .nm-cap .s.none { color: #8a8797; }
@@ -109,7 +124,7 @@ const COLS: Record<string, NmColumn[]> = {
             <div class="g-head-t">
               <h1>{{ it.name }}</h1>
               <app-status-badge [status]="it.status"></app-status-badge>
-              @if (it.result?.activeScan) { <span class="dots-loader text-warning"><span></span><span></span><span></span></span> }
+              @if (scanInFlight()) { <span class="dots-loader text-warning"><span></span><span></span><span></span></span> }
             </div>
             <div class="g-meta">
               @if (it.spec?.purpose) { <span class="g-meta-item">{{ it.spec.purpose }}</span><span class="sep">·</span> }
@@ -122,7 +137,7 @@ const COLS: Record<string, NmColumn[]> = {
             <div class="mt-50">@for (l of labels(); track l) { <span class="nm-chip">{{ l }}</span> }</div>
           </div>
           <div class="g-actions">
-            <button type="button" class="btn btn-sm btn-primary mr-50" [disabled]="!!it.result?.activeScan || scanning()" (click)="scanNow()">⟳ Scan now</button>
+            <button type="button" class="btn btn-sm btn-primary mr-50" [disabled]="scanInFlight() || scanning()" (click)="scanNow()">⟳ Scan now</button>
             <div ngbDropdown container="body" placement="bottom-right">
               <button type="button" class="btn btn-sm hide-arrow" aria-label="More actions" ngbDropdownToggle><i data-feather="more-vertical"></i></button>
               <div ngbDropdownMenu>
@@ -134,10 +149,20 @@ const COLS: Record<string, NmColumn[]> = {
           </div>
         </header>
 
-        @if (it.result?.activeScan; as a) {
-          <div class="nm-progress">
-            Scanning {{ a.unitsFinished }}/{{ a.unitsTotal }}@if (a.currentUnit) { · {{ a.currentUnit }} }
-            <div class="bar"><div [style.width.%]="a.unitsTotal ? (100 * a.unitsFinished / a.unitsTotal) : 0"></div></div>
+        @if (progress(); as p) {
+          <div class="nm-progress" role="status" aria-live="polite">
+            <div class="top">
+              <span class="now">{{ p.headline }}</span>
+              <span class="when">{{ p.counter }} · {{ elapsed() }}</span>
+            </div>
+            <div class="bar" [class.queued]="p.queued"><div [style.width.%]="p.pct"></div></div>
+            @if (p.steps.length) {
+              <div class="nm-steps">
+                @for (st of p.steps; track st.id) { <span class="nm-step" [class]="'nm-step ' + st.cls" [title]="st.title">{{ st.icon }} {{ st.label }}</span> }
+              </div>
+            } @else {
+              <div class="small">{{ p.queued ? 'Waiting for the scan worker — it checks for work about once a minute.' : 'Collecting…' }}</div>
+            }
           </div>
         }
         @if (it.result?.lastError) { <div class="alert alert-warning p-1 nm-banner">Last scan error: {{ it.result.lastError }}</div> }
@@ -241,6 +266,46 @@ export class BlueprintDetailComponent implements OnInit {
   protected readonly snapshots = signal<SnapshotHeader[]>([]);
   protected readonly selectedSnapshot = signal<string | null>(null);
 
+  private readonly awaiting = signal(false);
+  private readonly now = signal(Date.now());
+  private clock?: Subscription;
+  /** A scan is requested or running: the server shows activeScan, or no snapshot exists yet, or Scan now was just clicked. */
+  protected readonly scanInFlight = computed(() => {
+    const r = this.item()?.result;
+    return !!r?.activeScan || (!r?.latestSnapshotId && !r?.lastError) || this.awaiting();
+  });
+  private readonly runningSnapshot = computed(() => {
+    const a = this.item()?.result?.activeScan;
+    return a ? this.snapshots().find(s => s.id === a.snapshotId) ?? null : null;
+  });
+  protected readonly progress = computed(() => {
+    if (!this.scanInFlight()) return null;
+    const a = this.item()?.result?.activeScan;
+    if (!a) return { queued: true, headline: 'Scan queued', counter: 'starting', pct: 0, steps: [] as Step[] };
+    const current = a.currentUnit ? describeUnit(a.currentUnit) : '';
+    const units = [...(this.runningSnapshot()?.units ?? [])].sort((x, y) => (COLLECTOR_ORDER[x.collector] ?? 99) - (COLLECTOR_ORDER[y.collector] ?? 99));
+    const steps: Step[] = units.map(u => {
+      const isCurrent = u.id === a.currentUnit && u.status === 'pending';
+      const icon = u.status === 'done' ? '✓' : u.status === 'failed' || u.status === 'denied' ? '✕' : isCurrent ? '◌' : '○';
+      return { id: u.id, label: `${COLLECTOR_LABEL[u.collector] ?? u.collector} · ${u.region}`, cls: isCurrent ? 'current' : u.status, icon,
+        title: u.missingPermission ? `missing ${u.missingPermission}` : u.error ?? u.status };
+    });
+    return {
+      queued: false,
+      headline: current ? `Scanning ${current}` : 'Scanning…',
+      counter: `${a.unitsFinished}/${a.unitsTotal} steps`,
+      pct: a.unitsTotal ? Math.max(4, (100 * a.unitsFinished) / a.unitsTotal) : 4,
+      steps,
+    };
+  });
+  protected readonly elapsed = computed(() => {
+    const a = this.item()?.result?.activeScan;
+    const from = Date.parse(a?.startedAt ?? a?.requestedAt ?? this.item()?.spec?.scanRequestedAt ?? '') || this.openedAt;
+    const s = Math.max(0, Math.round((this.now() - from) / 1000));
+    return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s`;
+  });
+  private readonly openedAt = Date.now();
+
   protected readonly latest = computed(() => this.item()?.result?.latestSummary ?? null);
   private readonly idx = computed(() => (this.graph() ? new GraphIndex(this.graph()!) : null));
 
@@ -323,11 +388,16 @@ export class BlueprintDetailComponent implements OnInit {
   private load(): void {
     this.svc.get(this.id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: item => {
+        const prevSnap = this.item()?.result?.latestSnapshotId ?? null;
+        const prevActive = !!this.item()?.result?.activeScan;
         this.item.set(item);
-        this.ensurePolling(!!item?.result?.activeScan);
         const snap = item?.result?.latestSnapshotId ?? null;
+        const active = !!item?.result?.activeScan;
+        // "Scan now" stays pending until the server shows the scan, then until that scan ends
+        if (this.awaiting() && ((prevActive && !active) || (snap && snap !== prevSnap && !active))) this.awaiting.set(false);
+        this.ensurePolling(this.scanInFlight());
         if (snap && snap !== this.loadedSnapshotId) this.loadGraph(snap);
-        if (this.tab() === 'snapshots') this.loadSnapshots();
+        if (active || this.tab() === 'snapshots') this.loadSnapshots();
       },
       error: err => this.loadError.set(NetworkBlueprintService.errorMessage(err)),
     });
@@ -349,13 +419,16 @@ export class BlueprintDetailComponent implements OnInit {
     });
   }
 
-  /** Poll every 10 s while a scan is running; stop when it finishes. */
+  /** Poll every 4 s (and tick the elapsed clock every second) while a scan is queued or running. */
   private ensurePolling(active: boolean): void {
     if (active && !this.poll) {
-      this.poll = interval(10000).pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.load());
+      this.poll = interval(4000).pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.load());
+      this.clock = interval(1000).pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.now.set(Date.now()));
     } else if (!active && this.poll) {
       this.poll.unsubscribe();
+      this.clock?.unsubscribe();
       this.poll = undefined;
+      this.clock = undefined;
     }
   }
 
@@ -375,6 +448,7 @@ export class BlueprintDetailComponent implements OnInit {
     this.svc.scanNow(it).subscribe({
       next: () => {
         this.scanning.set(false);
+        this.awaiting.set(true);
         this.ensurePolling(true);
         this.load();
       },
@@ -401,4 +475,20 @@ export class BlueprintDetailComponent implements OnInit {
   protected fmt(v: string | null | undefined): string {
     return v ? formatDate(v, 'medium', this.locale) : '—';
   }
+}
+
+interface Step { id: string; label: string; cls: string; icon: string; title: string }
+
+const COLLECTOR_LABEL: Record<string, string> = {
+  'aws.core-network': 'VPCs, subnets & routes', 'aws.interfaces': 'Interfaces & workloads', 'aws.load-balancers': 'Load balancers',
+  'aws.endpoints': 'VPC endpoints', 'aws.transit': 'Transit gateways', 'aws.vpn': 'Site-to-site VPN', 'aws.peering': 'Peering',
+  'aws.dns-resolver': 'DNS resolver', 'aws.flow-logs': 'Flow logs', 'aws.dns-zones': 'Route 53 zones',
+};
+const COLLECTOR_ORDER: Record<string, number> = Object.fromEntries(Object.keys(COLLECTOR_LABEL).map((k, i) => [k, i]));
+
+/** Work unit ids are `collector|scopeId|region`. */
+function describeUnit(id: string): string {
+  const [collector, , region] = id.split('|');
+  const label = COLLECTOR_LABEL[collector] ?? collector;
+  return region && region !== 'global' ? `${label.toLowerCase()} in ${region}` : label.toLowerCase();
 }
