@@ -60,9 +60,9 @@ Ties the bundle together. For a typed extension (see the hello-world manifest):
 ```jsonc
 {
   "manifestVersion": "1.0",
-  "id": "duplo.examples.helloworld", "name": "Hello World", "version": "0.1.0",
+  "id": "com.duplocloud.helloworld", "name": "Hello World", "version": "0.1.0",
   "sdkVersion": "<from GET …/extensions/sdk-version>",
-  "backend": { "assemblyDir": "duplo.examples.helloworld/0.1.0/backend",
+  "backend": { "assemblyDir": "com.duplocloud.helloworld/0.1.0/backend",
                "entryAssembly": "Duplo.Extension.HelloWorld.dll" },
   "resources": [{
     "ticketOriginType": "HelloWorld", "restSegment": "extensions/helloworlds", "subType": "hello-world",
@@ -73,15 +73,18 @@ Ties the bundle together. For a typed extension (see the hello-world manifest):
     "hooksType":  "Duplo.Extension.HelloWorld.HelloWorldHooks",
     "serviceType":"Duplo.Extension.HelloWorld.HelloWorldService"
   }],
-  "skills": [{ "folder": "duplo.examples.helloworld/0.1.0/skills/provision-helloworld", "isBuiltIn": true }],
+  "skills": [{ "folder": "com.duplocloud.helloworld/0.1.0/skills/provision-helloworld", "isBuiltIn": true }],
   "skillMappings": [{ "originType": "HelloWorld", "subType": "hello-world",
                       "skillNames": ["provision-helloworld"], "timeout": { "provision": 300, "deprovision": 120 } }],
   "frontend": { "remote": { … }, "menus": [ … ], "routes": [ … ] }
 }
 ```
 Critical: `archetype` must be `"typed"` so the loader takes the DLL path; the five `*Type` names must be the
-fully-qualified type names in your DLL; `backend.assemblyDir` is `<id>/<version>/backend`. **Bump `version` on
-every backend code change** ([06](06-registration.md#reloading-changed-code--bump-manifestversion)).
+fully-qualified type names in your DLL; `backend.assemblyDir` is `<id>/<version>/backend` and each
+`skills[].folder` is `<id>/<version>/skills/<name>`. **Bump `version` on every backend code change**
+([06](06-registration.md#reloading-changed-code--bump-manifestversion)) — you don't have to bump either path
+with it, since `build-extension.sh` derives both from `id` and `version` when it writes the bundle manifest.
+It prints a `NOTE:` if a checked-in value disagreed.
 
 ### Naming
 
@@ -256,12 +259,12 @@ a plain `npm install` just works from a fresh clone. Two schemes coexist:
 
 - **The samples** share one copy at repo-root `packages/`, since they never leave this repo:
   ```json
-  "@duplocloud-internal/ng-common-lib": "file:../../../packages/duplocloud-internal-ng-common-lib-0.2.0.tgz",
+  "@duplocloud-internal/ng-common-lib": "file:../../../packages/duplocloud-internal-ng-common-lib-0.4.0.tgz",
   ```
 - **The skill template** (`templates/helloworld/frontend/`) keeps its **own** copy under `vendor/`, because it
   gets copied out to `extensions/<name>/` or a provisioning workdir and must stay self-contained:
   ```json
-  "@duplocloud-internal/ng-common-lib": "file:vendor/duplocloud-internal-ng-common-lib-0.2.0.tgz",
+  "@duplocloud-internal/ng-common-lib": "file:vendor/duplocloud-internal-ng-common-lib-0.4.0.tgz",
   ```
 
 Scaffolding from the template carries the tarball and the specifier with it — keep both when you copy.

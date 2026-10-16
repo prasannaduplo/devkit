@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Tail logs. Optional service name: duplo-ai-studio | claude-code-agent | dind | duplo-ui | mongo | xterm
+# Tail logs. Optional service name: duplo-ai-studio | claude-code-agent | dind | duplo-ui | mongo | xterm | installer
 set -euo pipefail
 cd "$(dirname "$0")"
-exec docker compose logs -f "$@"
+. ./scripts/_runtime.sh          # → $RUNTIME (docker | podman)
+runtime_resolve || exit 1
+exec "$RUNTIME" compose logs -f "$@"

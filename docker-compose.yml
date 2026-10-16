@@ -43,16 +43,21 @@ services:
       - qdrant_data:/qdrant/storage
 
   # One-shot: chown the shared named volumes to uid 1001 so the non-root studio + agent
-  # (both appuser 1001) can write them. Named volumes are created root-owned, and run.sh
-  # does `down -v` each start, so this must run every startup (see the services' depends_on).
+  # (both appuser 1001) can write them. Named volumes are created root-owned, on first start and again after
+  # `run.sh --reset` or `stop.sh --wipe` removes them, so this runs every startup (see the services' depends_on).
   # Both processes writing as 1001 keeps ticket/skill/extension dirs interoperable.
+  # The installer's state volume goes to 65532 instead, the distroless nonroot user its image runs as.
   init-perms:
     image: busybox:1.36
-    command: ["sh", "-c", "chown -R 1001:1001 /data /extstudio /csessions && echo 'volumes chowned to 1001'"]
+    command:
+      - sh
+      - -c
+      - chown -R 1001:1001 /data /extstudio /csessions && chown -R 65532:65532 /installer && echo 'volumes chowned'
     volumes:
       - platform_data:/data
       - extension_studio_data:/extstudio
       - claude_sessions:/csessions
+      - installer_state:/installer
 
   duplo-ai-studio:
     image: quay.io/duplocloud/backend:${STUDIO_TAG}
@@ -75,6 +80,7 @@ services:
       # Browser reaches xterm on the published host port, so this must be host-reachable.
       - AIStudio__XtermHost=http://localhost:${XTERM_PORT:-6060}
       - LocalFileStorage__RootPath=/data
+      - Extensions__InstallerUrl=http://installer:8080
     volumes:
       # Shared /data file store (skills + loaded-extension skill files). Shared with the agent so it can
       # read the seeded skills. Survives restart.
@@ -85,6 +91,49 @@ services:
     depends_on:
       mongo:
         condition: service_started
+      init-perms:
+        condition: service_completed_successfully
+
+  # Installs and upgrades extensions in the studio: each build that changes in extensions/[name]/dist/ while it runs,
+  # and a catalog extension when the Available tab asks. Only the studio calls it, signing each call with the shared JWT
+  # secret, so no host port is published.
+  installer:
+    # Defaults to .env.example's pin, so `docker compose up` before run.sh copies INSTALLER_TAG into .env still starts.
+    image: quay.io/duplocloud/helpdesk-installer:${INSTALLER_TAG:-main-4780968f}
+    restart: unless-stopped
+    environment:
+      - INSTALLER_PLATFORM=compose
+      - INSTALLER_BACKEND_URL=http://duplo-ai-studio:60021
+      # The studio service's image, which the status record reports and holds are keyed on.
+      - INSTALLER_BACKEND_IMAGE=quay.io/duplocloud/backend:${STUDIO_TAG}
+      - INSTALLER_STATE_DIR=/var/lib/installer
+      - INSTALLER_LOCAL_DIR=/extensions
+      # One key at a time rather than env_file, so the installer holds none of .env's LLM, AWS or admin credentials.
+      - Authentication__JwtSharedSecret=${Authentication__JwtSharedSecret:-}
+      - Licensing__Token=${Licensing__Token:-}
+      # The selection. With no selection key set, every pass skips as no-release-config and installs nothing, so the
+      # installer reads an empty value as unset.
+      - EXTENSIONS_ENABLED=${EXTENSIONS_ENABLED:-true}
+      - EXTENSIONS_SOURCE=${EXTENSIONS_SOURCE:-customer}
+      - EXTENSIONS_EXCLUDE=${EXTENSIONS_EXCLUDE:-}
+      - EXTENSIONS_RESET_AT=${EXTENSIONS_RESET_AT:-}
+      - EXTENSIONS_UPDATE_INSTALLED=${EXTENSIONS_UPDATE_INSTALLED:-}
+      - EXTENSIONS_FROZEN=${EXTENSIONS_FROZEN:-}
+      - EXTENSIONS_DRY_RUN=${EXTENSIONS_DRY_RUN:-}
+      - EXTENSIONS_OPT_OUT=${EXTENSIONS_OPT_OUT:-}
+      - EXTENSIONS_LAYERS=${EXTENSIONS_LAYERS:-}
+      - EXTENSIONS_CONFIG_INVALID=${EXTENSIONS_CONFIG_INVALID:-}
+      - EXTENSIONS_ENROLLMENT_ID=${EXTENSIONS_ENROLLMENT_ID:-}
+      # The license server's catalog, off while LICENSE_SERVER_URL is empty, so the installer runs on local builds only.
+      - LICENSE_SERVER_URL=${LICENSE_SERVER_URL:-}
+      - URL_ROUTE_URL=${URL_ROUTE_URL:-}
+      - CHANNELS_BASE_URL=${CHANNELS_BASE_URL:-}
+      - CHANNELS_BUCKET=${CHANNELS_BUCKET:-}
+    volumes:
+      # The status record. A named volume, so it survives a recreate and goes with the database on `down -v`.
+      - installer_state:/var/lib/installer
+      - ./extensions:/extensions:ro
+    depends_on:
       init-perms:
         condition: service_completed_successfully
 
@@ -181,16 +230,50 @@ services:
       claude-code-agent:
         condition: service_started
 
+  # Renders nginx/default.conf into a volume with the DNS resolver this runtime actually uses.
+  #
+  # It cannot be done in the UI image: that image's entrypoint is `nginx` directly — no
+  # /docker-entrypoint.d/, no /etc/nginx/templates, and it runs as nonroot 65532 — so the usual
+  # envsubst-on-a-template trick is unavailable. nginx itself has never read /etc/resolv.conf for its
+  # `resolver` directive, so the address has to be substituted before nginx starts.
+  #
+  # Asking the network rather than branching on the runtime: any container on this network is handed
+  # the correct nameserver by the runtime itself, so busybox reads its own /etc/resolv.conf and there
+  # is no docker-vs-podman case to keep in sync (verified: 127.0.0.11 on docker, the network gateway
+  # on podman).
+  #
+  # $$ not $: compose interpolates $VAR in `command:` before the shell sees it, and an interpolated-away
+  # variable yields an empty resolver and an nginx that will not load its config at all.
+  init-nginx-conf:
+    image: busybox:1.36
+    command:
+      - sh
+      - -c
+      - |
+        R="$$(awk '/^nameserver/{print $$2; exit}' /etc/resolv.conf)"
+        [ -n "$$R" ] || { echo "no nameserver in /etc/resolv.conf" >&2; exit 1; }
+        sed "s|__RESOLVER__|$$R|" /tpl/default.conf > /out/default.conf
+        chmod 0644 /out/default.conf
+        echo "nginx resolver = $$R"
+    volumes:
+      - ./nginx/default.conf:/tpl/default.conf:ro
+      - nginx_conf:/out
+
   duplo-ui:
     image: quay.io/duplocloud/duplo-ai-helpdesk-ui:${UI_TAG}
     restart: unless-stopped
     ports:
-      - "${UI_PORT:-4200}:80"
+      - "${UI_PORT:-4200}:8080"
     volumes:
-      # Published image serves the SPA only; this conf proxies API prefixes to the studio (same-origin, no CORS).
-      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      # Published image serves the SPA only; the rendered conf proxies API prefixes to the studio
+      # (same-origin, no CORS). The whole directory is replaced: the image ships only default.conf in
+      # there, and tests/test-ui-nginx.sh guards that assumption.
+      - nginx_conf:/etc/nginx/conf.d:ro
     depends_on:
-      - duplo-ai-studio
+      duplo-ai-studio:
+        condition: service_started
+      init-nginx-conf:
+        condition: service_completed_successfully
 
   xterm:
     image: quay.io/duplocloud/duplo-xterm:${XTERM_TAG:-main-d323e0b}
@@ -201,36 +284,45 @@ services:
     environment:
       - CORS_ORIGIN=*
 
-  # Build toolchain for extensions (.NET SDK 8 + Node 22). Behind a profile so `docker compose pull`
+  # Build toolchain for extensions (.NET SDK 8 + Node 22). Behind a profile so the `compose pull`
   # and `up` in run.sh skip it entirely — a user who only runs the platform never downloads it. The
-  # build wrapper starts it on demand with `docker compose run --rm --no-deps builder`.
+  # build wrapper starts it on demand with `$RUNTIME compose run --rm --no-deps builder`.
   #
-  # Being a compose service (rather than a bare `docker run`) is what lets the build reach the studio over
+  # Being a compose service (rather than a bare `run`) is what lets the build reach the studio over
   # the compose network — the SDK feed comes from AIStudio at http://duplo-ai-studio:60021 — but only when
-  # the studio is in THIS compose project. `docker compose` is project-scoped (the project defaults to the
+  # the studio is in THIS compose project. Compose is project-scoped (the project defaults to the
   # directory name), so a platform started from a second checkout or a git worktree — which is how this
   # repo is developed — is not on this network and that name does not resolve. scripts/_builder.sh detects
   # which case it is and falls back to the published host port via host.docker.internal (see extra_hosts
   # below). Both routes are live; the compose network is simply the preferred one.
   builder:
     profiles: [tools]
-    # scripts/_builder.sh resolves BUILDER_TAG and exports BUILDER_IMAGE before every build. This default is only
-    # for a hand-run `docker compose run builder`, and must match _BUILDER_PINNED_IMAGE there.
+    # Deliberately ONE level of interpolation, not a nested ${BUILDER_IMAGE:-…:${BUILDER_TAG:-…}}:
+    # podman-compose 1.5 stops at the first '}' and appends the remainder literally, yielding
+    # "…busybox:1.36}" and an "invalid reference format" error even when BUILDER_IMAGE is set. Nothing
+    # is lost — scripts/_builder.sh:builder_resolve_image resolves BUILDER_TAG and exports BUILDER_IMAGE
+    # before every build, so the default below is only ever reached by a hand-run `compose run` with no
+    # BUILDER_IMAGE set. It is the digest-pinned toolchain regardless of BUILDER_TAG, and must match
+    # _BUILDER_PINNED_IMAGE there (use the build scripts, or set BUILDER_IMAGE outright, to pick another).
     image: ${BUILDER_IMAGE:-quay.io/duplocloud/duplo-extension-builder@sha256:8185e6a74379ae99e145f55608b3bc17e3037e95e64a612a226fe0eb15c0dbcd}
     # Unset by default, so the build runs on the host's native architecture. Set BUILDER_PLATFORM only
     # to force one (e.g. linux/amd64 if a publish ever ends up amd64-only) — an unset value is dropped
     # by compose, whereas copying duplo-ai-studio's linux/amd64 default would silently emulate a .NET
     # build on Apple Silicon.
     platform: ${BUILDER_PLATFORM:-}
-    # The caller's real uid/gid, exported by scripts/_builder.sh — so dist/ ends up owned by the
-    # invoking user, not root. The default is only a fallback for a hand-run `docker compose run`.
+    # The ids that make dist/ come out owned by the invoking user, exported by scripts/_builder.sh.
+    # NOT always `id -u`: under rootless podman the caller is already mapped to uid 0 inside the user
+    # namespace, so 0:0 is what yields caller-owned files and a real uid maps to an unwritable subuid.
+    # scripts/_runtime.sh:runtime_builder_ids picks per runtime. The default here is only a fallback for
+    # a hand-run `compose run`, and is correct for docker; under rootless podman pass DUPLO_UID=0.
     user: "${DUPLO_UID:-1000}:${DUPLO_GID:-1000}"
     working_dir: /work
     # Lets the build reach a studio that is NOT in this compose project via the published host port.
     # compose scopes services per project (the directory name), so a stack started in another checkout
     # is not on this project's network and duplo-ai-studio does not resolve; _builder.sh detects that and
     # points DUPLO_BASE at host.docker.internal instead. A no-op on Docker Desktop, where the name
-    # already resolves; on Linux it is what makes it resolve at all.
+    # already resolves; on Linux (and under podman, which maps host-gateway the same way) it is what
+    # makes it resolve at all.
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
@@ -255,11 +347,13 @@ services:
       - DUPLO_ADMIN_TOKEN=${DUPLO_ADMIN_TOKEN:-}
 
 volumes:
+  nginx_conf:
   mongo_data:
   platform_data:
   extension_studio_data:
   claude_sessions:
   qdrant_data:
+  installer_state:
   dind_storage:
   # Keyed by uid on purpose: these are written as the calling user (see the service's `user:`), and one
   # uid's runtime-created cache subdirectories are not writable by another, so sharing a single pair

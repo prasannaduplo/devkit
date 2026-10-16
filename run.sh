@@ -50,6 +50,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 ENV=.env
+. ./scripts/_runtime.sh          # → $RUNTIME (docker | podman); resolved in preflight
 . ./scripts/_provider_gateway.sh
 . ./scripts/_provider_subscription.sh
 . ./scripts/_studio_api.sh
@@ -101,6 +102,14 @@ while [ $# -gt 0 ]; do
   shift
 done
 
+# ── .env must exist before anything reads it ──────────────────────────────────
+# Ahead of the prerequisite checks deliberately: runtime_resolve below reads RUNTIME from .env and then
+# memoises its answer for the whole run. Creating .env after that point meant a first run on a box with
+# both CLIs installed auto-detected docker and ignored RUNTIME=podman — set in .env or shipped in
+# .env.example — for both podman preflights, `compose pull` and `compose up`. Needs neither python3 nor
+# $RUNTIME, so it is safe this early.
+[ -f "$ENV" ] || { [ -f .env.example ] && cp .env.example "$ENV" || touch "$ENV"; }
+
 # ── prerequisites ────────────────────────────────────────────────────────────
 # Checked here, after flag parsing (so --help still works on a bare machine) and before the first line
 # that needs either one — setenv() below is already python3. Both are hard requirements, so report every
@@ -109,38 +118,103 @@ done
 #   python3  every .env write and every JSON response in this script and in scripts/ is parsed with it.
 #            No version floor: only the stdlib (json, sys, os, datetime, base64) is used, so anything
 #            still called python3 is new enough.
-#   docker   the whole stack, and every extension build, runs in containers. Compose must be v2, i.e.
-#            the `docker compose` subcommand — the standalone `docker-compose` v1 binary is not used.
+#   RUNTIME  the whole stack, and every extension build, runs in containers. Which CLI drives them is
+#            resolved by scripts/_runtime.sh (RUNTIME in the environment or .env, else auto-detected);
+#            it must provide a v2-style `compose` subcommand. The standalone `docker-compose` v1 binary
+#            is not used.
 #
-# The daemon-not-running case is a warning, not an error: `docker compose pull` further down reports it
-# far better than we can, and failing here would block the flag-only paths that never touch the daemon.
+# The daemon-not-running case is a warning, not an error: `$RUNTIME compose pull` further down reports
+# it far better than we can, and failing here would block the flag-only paths that never touch it.
 MISSING=""
 command -v python3 >/dev/null 2>&1 || MISSING="${MISSING}
   • python3 — not on PATH. macOS: brew install python3 (or install Xcode command line tools).
     Debian/Ubuntu: sudo apt-get install -y python3. RHEL/Amazon Linux: sudo dnf install -y python3."
-if ! command -v docker >/dev/null 2>&1; then
+
+# runtime_resolve must run in THIS shell, not a command substitution: it sets RUNTIME as a side effect,
+# which a subshell would discard. So its diagnostics go straight to stderr rather than into $MISSING —
+# the one-pass property is preserved by deferring the exit until python3 has been reported too.
+RUNTIME_OK=1
+runtime_resolve || RUNTIME_OK=0
+if [ "$RUNTIME_OK" = 1 ] && ! "$RUNTIME" compose version >/dev/null 2>&1; then
+  # The CLI exists but has no `compose` subcommand: Compose v1 only, or a plugin-less install. For
+  # podman that usually means the podman-compose (or docker-compose) provider is missing, since podman
+  # shells out to one rather than implementing compose itself.
   MISSING="${MISSING}
-  • docker — not on PATH. Install Docker Desktop (https://docs.docker.com/get-docker/), Colima, or
-    Rancher Desktop, then re-run."
-elif ! docker compose version >/dev/null 2>&1; then
-  # `docker` exists but has no `compose` subcommand: either Compose v1 only, or a plugin-less install.
-  MISSING="${MISSING}
-  • docker compose (v2) — 'docker compose version' failed. The standalone docker-compose v1 binary is
-    not enough; install the Compose v2 plugin, or upgrade Docker Desktop."
+  • $RUNTIME compose — '$RUNTIME compose version' failed. A v2-style compose subcommand is required;
+    the standalone docker-compose v1 binary is not enough.
+      docker  — install the Compose v2 plugin, or upgrade Docker Desktop.
+      podman  — it shells out to a compose provider rather than implementing compose itself.
+                Podman Desktop can install one for you, or: brew install podman-compose"
+  # Before reciting prerequisites, check whether another supported runtime is simply ready. Hit in
+  # practice with RUNTIME=podman pinned in .env, podman's socket broken, and docker up with compose v2:
+  # the advice above is all correct and all irrelevant when a working runtime is already installed.
+  _calt="$(runtime_alternatives_compose)"
+  _pinned="$(runtime_requested)"
+  for _c in $_calt; do
+    if [ -n "$_pinned" ]; then
+      MISSING="${MISSING}
+    $_c is installed, responding, and has compose. RUNTIME is currently pinned to '$_pinned' — that
+    pin outranks auto-detection, which would have chosen $_c. Change it in .env:
+        RUNTIME=$_c"
+    else
+      MISSING="${MISSING}
+    $_c is installed, responding, and has compose. Set it in .env:
+        echo 'RUNTIME=$_c' >> .env"
+    fi
+    MISSING="${MISSING}
+    Set it in .env rather than per-command: run.sh, the build scripts, logs.sh and stop.sh each
+    resolve the runtime independently, so a one-off on the command line leaves the next command on
+    the other runtime."
+  done
+  unset _calt _pinned _c
 fi
 if [ -n "$MISSING" ]; then
   echo "This kit needs a couple of things that aren't here yet:$MISSING" >&2
-  exit 1
+  RUNTIME_OK=0
 fi
-docker info >/dev/null 2>&1 || echo "Note: the Docker daemon doesn't look like it's running — start it before this gets to 'Pulling images'." >&2
+[ "$RUNTIME_OK" = 1 ] || exit 1
+# If the resolved runtime is not answering, say so — and if another supported one IS, name it. Detection
+# is presence-based, so a stopped Docker Desktop alongside a healthy podman resolves to docker and then
+# fails at 'Pulling images' with nothing pointing at the way out.
+if ! "$RUNTIME" info >/dev/null 2>&1; then
+  echo "Note: $RUNTIME doesn't look ready (daemon not running, or no connection) — sort that out before this gets to 'Pulling images'." >&2
+  _alt="$(runtime_alternatives)"
+  if [ -n "$_alt" ]; then
+    for _a in $_alt; do
+      echo "      $_a is installed and responding. To use it, set it in .env — every script reads it" >&2
+      echo "      there, and a one-off on the command line would leave the next command elsewhere:" >&2
+      echo "          echo 'RUNTIME=$_a' >> .env" >&2
+    done
+  fi
+  unset _alt _a
+fi
+
+# Sized-VM check. Separate from the MISSING one-pass above because it needs RUNTIME already resolved,
+# and it is a hard failure by design: an undersized podman machine does not stop the stack from coming
+# up, it silently poisons every extension build later with an OOM kill that reports itself as a Go
+# deadlock and 'exit status 137'. A no-op on docker and on a machine-less podman.
+runtime_machine_check || exit 1
+
+# Rosetta preflight. Same shape and the same reason as the sized-VM check above: on Apple Silicon a
+# podman machine without Rosetta hands amd64 binaries to QEMU, which cannot run the studio's .NET
+# runtime — and every layer of that failure lies. The container reports "Up", /healthz simply never
+# answers, and the wait loop further down burns 4.5 minutes before exiting on "Login failed", which
+# points at credentials. Catching it here turns all of that into one accurate message. A no-op on
+# docker, on an amd64 host, and on an arm64 studio image.
+runtime_rosetta_check || exit 1
 
 # ── .env helpers (line-based; safe for tokens/keys with special chars) ────────
-[ -f "$ENV" ] || { [ -f .env.example ] && cp .env.example "$ENV" || touch "$ENV"; }
 getenv() { grep -E "^$1=" "$ENV" 2>/dev/null | head -1 | cut -d= -f2- || true; }
 setenv() {
   python3 - "$ENV" "$1" "${2-}" <<'PY'
 import sys
 p,k,v=sys.argv[1],sys.argv[2],sys.argv[3]
+# Strip CR/LF from the value before it ever reaches .env. A bare \r (e.g. from a CRLF-wrapped
+# `openssl` build on Windows) renders as a wrapped line and can fail downstream validation; a bare
+# \n would be worse — it writes a second, bare line with no '=' and breaks compose's env_file
+# parsing for the whole stack. Every value stored here (tokens, keys, passwords, ids) is expected
+# to be single-line, so this is a safe no-op on any value that was already clean.
+v=v.replace("\r","").replace("\n","")
 lines=open(p).read().splitlines()
 out=[];found=False
 for ln in lines:
@@ -224,7 +298,7 @@ license_warn_expiry() {
 #   ISSUED<TAB><message><TAB><recover-path>  one trial per email — already used. <recover-path> is set when
 #                                   the server says that trial is recoverable; recover it rather than asking
 #                                   the user for a JWT they may never have been sent.
-#   EMAIL<TAB><message>             email rejected (personal domain, malformed, …)
+#   EMAIL<TAB><message>             email rejected (privacy-relay or disposable domain, malformed, …)
 #   ERR<TAB><message>               anything else, including transport failure
 license_request() { # email api-url
   E="$1" U="$2" python3 - <<'PY'
@@ -558,7 +632,7 @@ fi
 # kept. The last-applied defaults are remembered in .env.defaults (git-ignored) so we can tell "you changed
 # it" from "the default changed". To re-track a pinned key, delete its line from .env (or .env.defaults).
 DEFAULTS_LOCK=.env.defaults
-DEFAULT_KEYS="STUDIO_TAG AGENT_TAG UI_TAG XTERM_TAG STUDIO_PLATFORM"   # add ports/DUPLO_TARGET here to track them too
+DEFAULT_KEYS="STUDIO_TAG AGENT_TAG UI_TAG XTERM_TAG INSTALLER_TAG STUDIO_PLATFORM"   # add ports/DUPLO_TARGET here to track them too
 if [ -f .env.example ]; then
   adopted=""
   for k in $DEFAULT_KEYS; do
@@ -582,7 +656,7 @@ fi
 # whenever that fetch failed. --reset-license (below) is how you ask for it to actually go away.
 if [ "$RESET" = 1 ]; then
   echo "==> --reset: tearing down stack + volumes (DB, extensions, file store)…"
-  docker compose down -v 2>/dev/null || true
+  "$RUNTIME" compose down -v 2>/dev/null || true
   for k in Authentication__LocalAdminEmail Authentication__LocalAdminPassword Authentication__SuperUsers \
            DEVKIT_MODEL ANTHROPIC_API_KEY AWS_REGION AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN \
            CLAUDE_MODEL CLAUDE_EXTRA_MODELS "${GATEWAY_KEYS[@]}" "${SUBSCRIPTION_KEYS[@]}" \
@@ -629,13 +703,53 @@ if [ "$RESET_LICENSE" = 1 ]; then
   echo "    cleared the license."
 fi
 
+# `read` with no `-e` has no line editor to intercept special keys, so a terminal that sends an escape
+# sequence during the prompt — an arrow key, a focus-in/out report, a bracketed-paste marker, a cursor
+# position reply — lands as literal bytes in the captured string instead of being consumed. Observed
+# concretely: an Up/Down arrow at the email prompt in a Windows Git-Bash/ConPTY session stored
+# `<ESC>[A<ESC>[B` ahead of the typed address, which then silently mismatched every login attempt.
+#
+# The two shapes a terminal actually emits for this (ECMA-48 §5.4):
+#   CSI   ESC '[' parameter-bytes(0-9:;<=>?) intermediate-bytes(0x20-0x2F) final-byte(0x40-0x7E)
+#         e.g. ESC[A (Up), ESC[1;5C (Ctrl+Right), ESC[200~/ESC[201~ (bracketed paste), ESC[?25h (DEC
+#         private mode) — the full parameter/intermediate byte ranges matter: matching only digits and
+#         ';' (as an earlier version of this function did) leaves ':'/'<'/'='/'>' sequences half-eaten,
+#         stripping the ESC but not the rest, which corrupts the value in a different way.
+#   SS3   ESC 'O' letter — the form some terminals use for arrow/function keys in "application keypad"
+#         mode instead of CSI.
+# A sequence this doesn't recognize, or a lone ESC with no sequence at all, still loses its ESC (and any
+# other C0/DEL byte) to the catch-all `[:cntrl:]` pass below — POSIX's standard control-character class,
+# portable across GNU/BSD/MSYS tr without relying on octal-range or \x escape syntax that differs between
+# them. None of this can ever remove intentionally-typed content: ESC/C0/DEL are not characters a person
+# can put in an email, password or API key by typing — confirmed against UTF-8, and against values
+# containing literal '[', '\', '$', '#' unrelated to any escape sequence.
+strip_term_noise() { # value
+  local s="$1" esc=$'\033'
+  s="$(printf '%s' "$s" | sed -E "s/${esc}(\[[0-9:;<=>?]*[ -/]*[@-~]|O[A-Za-z])//g")"
+  printf '%s' "$s" | tr -d '[:cntrl:]'
+}
+# Every interactive prompt in this script goes through here — a value typed at ANY other `read` site
+# would bypass strip_term_noise entirely, which is exactly how the email and LLM-provider prompts
+# originally missed it (a review caught both). `-e` (readline) is the first line of defense: it
+# interprets an arrow key, Home/End, or a bracketed-paste sequence as editing input instead of
+# inserting the raw bytes, so in the common case nothing reaches strip_term_noise to clean up at all.
+# It's kept behind it anyway as a second line of defense for whatever readline doesn't bind for a
+# given $TERM/terminfo, or a sequence sent outside of readline's own escape-key window.
+prompt() { # var label [secret]
+  local __v __rc=0
+  if [ "${3-}" = secret ]; then read -res -p "$2: " __v || __rc=$?; echo >&2
+  else read -re -p "$2: " __v || __rc=$?
+  fi
+  printf -v "$1" '%s' "$(strip_term_noise "$__v")"
+  return "$__rc"
+}
 # ── resolve a value: flag > .env > prompt ─────────────────────────────────────
-resolve() { # flagval envkey prompt [secret]
-  local cur="$1" envkey="$2" prompt="$3" secret="${4-}"
+resolve() { # flagval envkey label [secret]
+  local cur="$1" envkey="$2" label="$3" secret="${4-}"
   [ -z "$cur" ] && cur="$(getenv "$envkey")"
   if [ -z "$cur" ]; then
     [ "$NONINTERACTIVE" = 1 ] && { echo "Missing $envkey — pass its flag (non-interactive)." >&2; exit 1; }
-    if [ "$secret" = secret ]; then read -rs -p "$prompt: " cur; echo >&2; else read -r -p "$prompt: " cur; fi
+    prompt cur "$label" "$secret"
   fi
   printf '%s' "$cur"
 }
@@ -661,7 +775,7 @@ EMAIL="$(resolve "$F_EMAIL" Authentication__LocalAdminEmail 'Admin email')"
 while ! email_valid "$EMAIL"; do
   echo "Invalid email address: '${EMAIL:-<empty>}' (expected name@example.com)." >&2
   { [ "$NONINTERACTIVE" = 1 ] || [ -n "$F_EMAIL" ]; } && exit 1
-  read -r -p 'Admin email: ' EMAIL
+  prompt EMAIL 'Admin email'
 done
 
 # ── license (BEGIN LICENSE BLOCK) ────────────────────────────────────────────
@@ -790,12 +904,12 @@ if [ -z "$LIC" ]; then
         break ;;
       EMAIL)
         echo "  ✖ $MSG" >&2
-        [ "$NONINTERACTIVE" = 1 ] && { echo "    Re-run with --email <work address> — personal domains are not accepted." >&2; exit 1; }
-        [ "$TRIES" -ge 3 ] && { echo "Giving up after $TRIES attempts — re-run with --email <work address>." >&2; exit 1; }
-        read -r -p 'Work email: ' EMAIL || { echo "No work email provided — re-run with --email <addr>." >&2; exit 1; }
+        [ "$NONINTERACTIVE" = 1 ] && { echo "    Re-run with --email <addr> — most work and personal addresses are accepted; privacy-relay and disposable domains are not." >&2; exit 1; }
+        [ "$TRIES" -ge 3 ] && { echo "Giving up after $TRIES attempts — re-run with --email <addr>." >&2; exit 1; }
+        prompt EMAIL 'Email address' || { echo "No email provided — re-run with --email <addr>." >&2; exit 1; }
         while ! email_valid "$EMAIL"; do
           echo "Invalid email address: '${EMAIL:-<empty>}' (expected name@example.com)." >&2
-          read -r -p 'Work email: ' EMAIL || { echo "No work email provided — re-run with --email <addr>." >&2; exit 1; }
+          prompt EMAIL 'Email address' || { echo "No email provided — re-run with --email <addr>." >&2; exit 1; }
         done ;;
       ISSUED)
         # The address already has a trial. When the server can recover it this is not an error the user has
@@ -868,7 +982,7 @@ if [ -z "$MODEL" ]; then
   fi
   # CONTAINER_IMDS is ok | blocked | unknown:<why>. Only a definite `blocked` withholds option 3 —
   # that one means the container test ran and failed (the hop limit), so the role would break at
-  # runtime. `unknown:` means we couldn't run the test at all (no docker yet, daemon down, busybox
+  # runtime. `unknown:` means we couldn't run the test at all (no runtime yet, daemon down, busybox
   # not pullable); the role itself is proven, so offer it with the caveat rather than hiding a
   # working option because our own check couldn't execute.
   if [ "$BEDROCK_AVAILABLE" = 1 ] && [ "$CONTAINER_IMDS" != blocked ]; then
@@ -882,7 +996,7 @@ if [ -z "$MODEL" ]; then
     esac
     printf 'Select LLM provider:\n  1) anthropic (API key)\n  2) bedrock (AWS keys)\n  3) LLM gateway (OpenRouter, Bifrost, LiteLLM, … — any Anthropic-compatible endpoint)\n  4) bedrock via this EC2 instance role — %s @ %s, no keys%s\n  5) Claude Code subscription (your own, via `claude setup-token`)\n' \
       "$AWS_ROLE" "$BEDROCK_REGION" "$IMDS_CAVEAT" >&2
-    read -r -p 'Enter 1, 2, 3, 4 or 5: ' MODEL
+    prompt MODEL 'Enter 1, 2, 3, 4 or 5'
   else
     if [ "$BEDROCK_AVAILABLE" = 1 ]; then
       # Host reached IMDS but a container couldn't — almost always the IMDSv2 PUT-response hop limit
@@ -893,7 +1007,7 @@ if [ -z "$MODEL" ]; then
       echo "    ✗ no usable instance-role Bedrock access${BEDROCK_REASON:+ ($BEDROCK_REASON)}." >&2
     fi
     printf 'Select LLM provider:\n  1) anthropic (API key)\n  2) bedrock (AWS keys)\n  3) LLM gateway (OpenRouter, Bifrost, LiteLLM, … — any Anthropic-compatible endpoint)\n  5) Claude Code subscription (your own, via `claude setup-token`)\n' >&2
-    read -r -p 'Enter 1, 2, 3 or 5: ' MODEL
+    prompt MODEL 'Enter 1, 2, 3 or 5'
   fi
 fi
 MODEL="$(printf '%s' "$MODEL" | tr '[:upper:]' '[:lower:]')"
@@ -907,7 +1021,10 @@ setenv DEVKIT_MODEL "$MODEL"
 setenv AIStudio__IsMasterDisabled true
 [ -n "$(getenv Authentication__FrontendBaseUrl)" ] || setenv Authentication__FrontendBaseUrl "http://localhost:$(getenv UI_PORT 2>/dev/null || echo 4200)"
 # Stable secrets: generate once; --reset already blanked them so they regenerate on a fresh DB.
-[ -n "$(getenv Encryption__MasterKey)" ] || setenv Encryption__MasterKey "$(openssl rand -base64 96 | tr -d '\n')"
+# -d '\r\n', not just '\n': the MSYS2/mingw64 openssl that ships with Git for Windows wraps base64
+# output at 64 chars using CRLF line endings, not bare LF. Stripping only '\n' left a stray '\r'
+# embedded mid-key, which rendered as a wrapped line in .env and failed the backend's key validation.
+[ -n "$(getenv Encryption__MasterKey)" ] || setenv Encryption__MasterKey "$(openssl rand -base64 96 | tr -d '\r\n')"
 [ -n "$(getenv Authentication__JwtSharedSecret)" ] || setenv Authentication__JwtSharedSecret "$(openssl rand -hex 32)"
 
 if [ "$MODEL" = anthropic ]; then
@@ -997,8 +1114,14 @@ for v in STUDIO_TAG UI_TAG; do
 done
 
 # ── start the stack ───────────────────────────────────────────────────────────
-echo "==> Pulling images…"; docker compose pull
-echo "==> Starting…"; docker compose up -d
+# Name the runtime here, not only when something breaks: auto-detect is presence-based and docker-first,
+# so on a box with both installed the choice is otherwise invisible until it goes wrong.
+echo "==> Using $(runtime_label)"
+echo "==> Pulling images…"; "$RUNTIME" compose pull
+# The installer mounts extensions/. A bind source the runtime has to create comes out root-owned under rootful docker
+# on Linux, which neither fetch-terraform-extension.sh below nor a build could then write.
+mkdir -p extensions
+echo "==> Starting…"; "$RUNTIME" compose up -d
 
 STUDIO_PORT="$(getenv STUDIO_PORT)"; [ -z "$STUDIO_PORT" ] && STUDIO_PORT=60021
 UI_PORT="$(getenv UI_PORT)"; [ -z "$UI_PORT" ] && UI_PORT=4200
@@ -1185,9 +1308,12 @@ cat <<EOF
 
 Build & deploy your extension (scripts read the target from .env — no DUPLO_BASE= prefix needed):
   ./scripts/build-extension.sh  extensions/<name>               # your extensions live in extensions/<name>/
-  ./scripts/deploy-extension.sh extensions/<name>/dist/extension.zip
+  # the installer service loads each build in extensions/<name>/dist/ by itself, within about 20 seconds
+  # without the installer, or on a remote target: ./scripts/deploy-extension.sh extensions/<name>/dist/extension.zip
   # or build every extension:    ./scripts/build-all.sh
   # or build a bundled sample:   ./scripts/build-extension.sh samples/helloworld
+  #   then load it, since the installer reads only extensions/:
+  #   ./scripts/deploy-extension.sh samples/helloworld/dist/extension.zip
   # re-attach the agent to another workspace: ./scripts/register-agent.sh <workspace-id>
   # attach the devops persona elsewhere:       ./scripts/register-persona.sh <workspace-id>
 EOF
