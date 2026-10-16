@@ -199,8 +199,8 @@ const COLS: Record<string, NmColumn[]> = {
         <div class="nm-body">
           <div class="nm-main">
             @switch (tab()) {
-              @case ('map') { <nm-network-map [graph]="graph()" (selected)="selection.set($event)" /> }
-              @case ('inventory') { <nm-inventory-tab [rows]="inventory()" [fileName]="it.name + '-inventory'" (rowClick)="selection.set({ kind: 'node', id: $event })" /> }
+              @case ('map') { <nm-network-map [graph]="graph()" [reveal]="reveal()" (selected)="selection.set($event)" /> }
+              @case ('inventory') { <nm-inventory-tab [rows]="inventory()" [fileName]="it.name + '-inventory'" (rowClick)="selectNode({ id: $event })" /> }
               @case ('egress') { <nm-table [columns]="cols['egress']" [rows]="egress()" [clickable]="true" empty="No member subnets collected." (rowClick)="selectNode($event)" /> }
               @case ('vpn') { <nm-table [columns]="cols['vpn']" [rows]="vpn()" [clickable]="true" empty="No site-to-site VPN connections reach these networks." (rowClick)="selectNode($event)" /> }
               @case ('transit') { <nm-table [columns]="cols['transit']" [rows]="transit()" [clickable]="true" empty="No transit hubs attached." (rowClick)="selectNode($event)" /> }
@@ -437,8 +437,15 @@ export class BlueprintDetailComponent implements OnInit {
     if (t === 'snapshots') this.loadSnapshots();
   }
 
+  protected readonly reveal = signal<{ id: string; seq: number } | null>(null);
+
+  /** A row in any data tab: open it on the map (right level and focus, selected, centred) with its details alongside. */
   protected selectNode(row: Record<string, any>): void {
-    if (row['id']) this.selection.set({ kind: 'node', id: row['id'] });
+    const id = row['id'];
+    if (!id || !this.idx()?.node(id)) return;
+    this.selection.set({ kind: 'node', id });
+    this.tab.set('map');
+    this.reveal.set({ id, seq: (this.reveal()?.seq ?? 0) + 1 });
   }
 
   protected scanNow(): void {

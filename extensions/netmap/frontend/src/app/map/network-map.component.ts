@@ -7,6 +7,7 @@ import { MAP_CSS } from '../model/map-styles';
 import { boxClasses, edgeClasses } from '../model/scene-svg';
 import { buildSeverity } from '../model/severity';
 import { Level, computeView } from '../model/zoom';
+import { kindInfo } from '../model/kinds';
 import { ElkLayoutService } from './elk-layout.service';
 
 export type MapSelection =
@@ -116,6 +117,8 @@ export class NetworkMapComponent {
   private readonly stage = viewChild<ElementRef<HTMLDivElement>>('stage');
 
   readonly graph = input<NetworkGraph | null>(null);
+  /** Bring a node into view: picks the level and focus that draw it, selects it and centres on it. `seq` re-triggers the same id. */
+  readonly reveal = input<{ id: string; seq: number } | null>(null);
   readonly selected = output<MapSelection | null>();
 
   protected readonly levels = LEVELS;
@@ -131,6 +134,8 @@ export class NetworkMapComponent {
   private readonly ty = signal(0);
   private runId = 0;
   private drag?: { x: number; y: number; tx: number; ty: number };
+  private suppressClick = false;
+  private pendingReveal?: string;
 
   private readonly idx = computed(() => (this.graph() ? new GraphIndex(this.graph()!) : null));
   private readonly severity = computed(() => (this.idx() ? buildSeverity(this.idx()!) : null));
@@ -180,15 +185,55 @@ export class NetworkMapComponent {
           if (run !== this.runId) return;
           this.scene.set(scene);
           this.busy.set(false);
-          setTimeout(() => this.fit());
+          setTimeout(() => (this.pendingReveal ? this.centreOn(this.pendingReveal) : this.fit()));
         },
         err => {
           if (run !== this.runId) return;
+          this.pendingReveal = undefined;
           this.error.set(String(err?.message ?? err));
           this.busy.set(false);
         },
       );
     });
+  }
+
+  private revealEffect = effect(() => {
+    const r = this.reveal();
+    const idx = this.idx();
+    if (!r || !idx) return;
+    const n = idx.node(r.id);
+    if (!n) return;
+    const lv = kindInfo(n.kind).level;
+    const network = n.kind === 'network' ? n : idx.ancestorOfKind(n.id, 'network');
+    let level: Level = (lv >= 1 && lv <= 4 ? lv : 3) as Level;
+    if (level === 4 && !network) level = 3;
+    const focus = level === 1 ? undefined : network?.id;
+    this.pendingReveal = r.id;
+    if (level === this.level() && focus === this.focusId() && this.scene().boxes.length) {
+      setTimeout(() => this.centreOn(r.id));
+    } else {
+      this.focusId.set(focus);
+      this.level.set(level);
+    }
+  });
+
+  /** Select and centre the node, or — when this level folds it into something else — the nearest drawn ancestor or neighbour. */
+  private centreOn(id: string): void {
+    this.pendingReveal = undefined;
+    const idx = this.idx();
+    const s = this.scene();
+    if (!idx) return;
+    const boxes = new Map(s.boxes.map(b => [b.id, b]));
+    const candidates = [id, ...idx.ancestors(id).map(a => a.id), ...idx.out(id).map(e => e.to), ...idx.in(id).map(e => e.from)];
+    const b = candidates.map(c => boxes.get(c)).find(Boolean);
+    if (!b) return this.fit();
+    this.selectedId.set(b.id);
+    const el = this.stage()?.nativeElement;
+    if (!el) return;
+    const k = Math.max(this.k(), 0.9);
+    this.k.set(k);
+    this.tx.set(el.clientWidth / 2 - (b.x + b.w / 2) * k);
+    this.ty.set(el.clientHeight / 2 - (b.y + b.h / 2) * k);
   }
 
   protected setLevel(l: Level): void {
@@ -205,6 +250,7 @@ export class NetworkMapComponent {
 
   protected pickBox(ev: Event, b: SceneBox): void {
     ev.stopPropagation();
+    if (this.suppressClick) return;
     this.selectedId.set(b.id);
     const v = this.view()?.nodes.find(n => n.id === b.id);
     if (v?.aggregate) this.selected.emit({ kind: 'aggregate', id: v.id, label: v.label, memberIds: v.aggregate.memberIds });
@@ -213,12 +259,13 @@ export class NetworkMapComponent {
 
   protected pickEdge(ev: Event, e: SceneEdge): void {
     ev.stopPropagation();
+    if (this.suppressClick) return;
     this.selectedId.set(e.id);
     this.selected.emit({ kind: 'edge', id: e.id, from: e.from, to: e.to, kinds: e.kinds, count: e.count, edgeIds: e.edgeIds });
   }
 
   protected clearSelection(): void {
-    if (this.drag) return;
+    if (this.suppressClick) return;
     this.selectedId.set(undefined);
     this.selected.emit(null);
   }
@@ -255,8 +302,8 @@ export class NetworkMapComponent {
   }
 
   protected onDown(ev: PointerEvent): void {
-    const target = ev.target as Element;
-    if (target.closest('.nm-box') || target.closest('.nm-hit') || target.closest('.nm-legend')) return;
+    // drag starts anywhere on the canvas (boxes and lines included); a click is only a click if the pointer barely moved
+    if (ev.button !== 0 || (ev.target as Element).closest('.nm-legend')) return;
     this.drag = { x: ev.clientX, y: ev.clientY, tx: this.tx(), ty: this.ty() };
   }
 
@@ -273,9 +320,12 @@ export class NetworkMapComponent {
   protected onUp(): void {
     const wasDragging = this.dragging();
     this.dragging.set(false);
-    // keep `drag` set for this tick so the click that ends a drag doesn't clear the selection
-    setTimeout(() => (this.drag = undefined));
-    if (!wasDragging) this.drag = undefined;
+    this.drag = undefined;
+    if (wasDragging) {
+      // the click that ends a drag must not select or deselect anything
+      this.suppressClick = true;
+      setTimeout(() => (this.suppressClick = false));
+    }
   }
 
   fit(): void {
