@@ -1,6 +1,7 @@
 import { GraphEdge, GraphNode, Json } from './api-types';
 import { parseV4 } from './cidr';
 import { GraphIndex, num, str, strs } from './graph-index';
+import { FRONT_KINDS, Peer, evalNetworkPolicy, lbsOf, podsBehind, workloadIp } from './workloads';
 
 // Static reachability over one snapshot graph: "can this resource reach X" (outbound) and "who can reach this
 // resource" (inbound). Evaluates security groups, network ACLs (raw entries) and route tables hop by hop.
@@ -9,6 +10,13 @@ import { GraphIndex, num, str, strs } from './graph-index';
 // What it does NOT model: return traffic for stateless NACLs (ephemeral ports), the peer side's route back over a
 // VPC peering, TGW attachment subnets (not collected — the path follows the network's onward route table and says
 // so), appliances / ENI route targets, IPv6, prefix lists that were not resolved, and DNS.
+//
+// Workloads (v2b): a pod, ECS task or Lambda function sends from the interface it runs on (pods use their own IP, a
+// secondary address of the node's ENI, so the node's security groups apply — security groups for pods are not
+// modeled); a Kubernetes service or ingress stands for the first pod behind it. Pods get a NetworkPolicy check on
+// the first hop out and at delivery in (ipBlock / namespaceSelector / podSelector, numeric ports; named ports and
+// selectors on traffic from outside the cluster are 'unknown'). Not modeled: kube-proxy / ClusterIP translation,
+// NodePort hops inside the node, service meshes, and whether the cluster actually enforces NetworkPolicy.
 
 export type Verdict = 'allow' | 'block' | 'unknown' | 'info';
 export type Outcome = 'reaches' | 'blocked' | 'unknown' | 'leaves-blueprint';
@@ -63,6 +71,8 @@ interface Dest {
   isPublic: boolean;
   nodeId?: string;
   eni?: GraphNode;
+  /** The destination is a pod: its NetworkPolicies apply on delivery. */
+  pod?: GraphNode;
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -155,9 +165,30 @@ function outsideRef(idx: GraphIndex, id: string): OutsideRef {
 // graph lookups
 
 /** The interfaces a resource sends from: itself, or what it attaches (workload/LB/endpoint → ENIs). */
-export function interfacesOf(idx: GraphIndex, n: GraphNode): GraphNode[] {
+export function interfacesOf(idx: GraphIndex, n: GraphNode, depth = 0): GraphNode[] {
   if (n.kind === 'network-interface') return [n];
-  return idx.out(n.id, 'attaches').map(e => idx.node(e.to)).filter((x): x is GraphNode => x?.kind === 'network-interface');
+  const attached = idx.out(n.id, 'attaches').map(e => idx.node(e.to)).filter((x): x is GraphNode => x?.kind === 'network-interface');
+  if (attached.length || depth > 1) return attached;
+  // workloads: pod / task / function → the ENI it runs on, or the EC2 node it runs on → that node's ENIs
+  const out: GraphNode[] = [];
+  for (const e of idx.out(n.id, 'runs-on')) {
+    const t = idx.node(e.to);
+    if (!t) continue;
+    if (t.kind === 'network-interface') out.push(t);
+    else out.push(...interfacesOf(idx, t, depth + 1));
+  }
+  return out;
+}
+
+/** The pod a node stands for in a trace: itself, or the first pod behind a service / ingress. */
+function podFor(idx: GraphIndex, n: GraphNode | undefined): GraphNode | undefined {
+  if (!n) return undefined;
+  if (n.kind === 'pod') return n;
+  return FRONT_KINDS.has(n.kind) ? podsBehind(idx, n)[0] : undefined;
+}
+
+function podByIp(idx: GraphIndex, ip: string): GraphNode | undefined {
+  return idx.ofKind('pod').find(p => str(p.attrs?.['podIp']) === ip || strs(p.attrs?.['podIps']).includes(ip));
 }
 
 function ipsOf(eni: GraphNode): string[] {
@@ -420,7 +451,7 @@ class Walk {
 }
 
 /** isPublic: the source has a public address (null = not known, e.g. tracing from a whole subnet). */
-interface Source { range: Range | null; sgIds: string[]; isPublic: boolean | null; subnetId?: string }
+interface Source { range: Range | null; sgIds: string[]; isPublic: boolean | null; subnetId?: string; pod?: GraphNode }
 
 /** Route out of a subnet: NACL outbound, then its route table. */
 function fromSubnet(w: Walk, subnet: GraphNode, src: Source): void {
@@ -593,6 +624,17 @@ function arrive(w: Walk, net: GraphNode, src: Source, via: 'hub' | 'peering', fr
     `The hub attachment’s subnets are not collected; following ${nameOf(best.rt)}, the route table in ${nameOf(net)} that sends ${destText(dest)} onward.`);
 }
 
+/** NetworkPolicy check at a pod; a hop either way. False = blocked. */
+function netPolicyHop(w: Walk, pod: GraphNode, dir: 'ingress' | 'egress', peer: Peer): boolean {
+  const v = evalNetworkPolicy(w.idx, pod, dir, peer, w.t);
+  const title = `NetworkPolicy ${dir}`;
+  if (!v) {
+    w.hop({ nodeId: pod.id, verdict: 'info', title, reason: `No NetworkPolicy with policyType ${dir === 'egress' ? 'Egress' : 'Ingress'} selects ${nameOf(pod)} — Kubernetes allows it.` });
+    return true;
+  }
+  return w.check({ verdict: v.verdict, nodeId: v.nodeId, reason: v.reason, rule: v.rule }, title);
+}
+
 /** Final delivery inside `network`: destination subnet NACL inbound, then the destination's security groups. */
 function deliver(w: Walk, network: GraphNode, src: Source, sameSubnet?: GraphNode): void {
   const { idx, dest } = w;
@@ -605,6 +647,7 @@ function deliver(w: Walk, network: GraphNode, src: Source, sameSubnet?: GraphNod
   if (dest.eni) {
     const c = evalSgs(idx, sgsOf(idx, dest.eni), 'ingress', src.range, src.sgIds, w.t, dest.eni.id);
     if (!w.check(c, 'Security group ingress')) return;
+    if (dest.pod && !netPolicyHop(w, dest.pod, 'ingress', { range: src.range, pod: src.pod })) return;
     const target = dest.nodeId && idx.node(dest.nodeId) ? dest.nodeId : dest.eni.id;
     return w.end('reaches', { nodeId: target, verdict: 'allow', title: `Reaches ${dest.label}`, reason: 'Destination reached.' });
   }
@@ -630,16 +673,24 @@ function resolveDest(idx: GraphIndex, to: PathTarget): Dest | string {
     const n = ipNum(to.ip);
     if (n === null) return `"${to.ip}" is not an IPv4 address.`;
     const range: Range = [n, n];
+    const pod = podByIp(idx, to.ip.trim());
     const eni = eniByIp(idx, to.ip.trim());
+    if (pod && eni) return { range, label: `${to.ip} (pod ${nameOf(pod)})`, isPublic: isPublicRange(range), nodeId: pod.id, eni, pod };
     if (eni) return { range, label: `${to.ip} (${nameOf(eni)})`, isPublic: isPublicRange(range), nodeId: eni.id, eni };
     return { range, label: to.ip.trim(), isPublic: isPublicRange(range) };
   }
   const node = idx.node(to.id);
   if (!node) return 'The destination is not in this snapshot.';
   if (node.id === INTERNET_ID) return { range: ALL, label: 'the internet', isPublic: true, nodeId: INTERNET_ID };
+  if (FRONT_KINDS.has(node.kind)) {
+    const pod = podFor(idx, node);
+    if (!pod) return `${nameOf(node)} selects no pod in the graph to trace to.`;
+    const d = resolveDest(idx, { kind: 'node', id: pod.id });
+    return typeof d === 'string' ? d : { ...d, label: `${nameOf(node)} (pod ${nameOf(pod)})` };
+  }
   const eni = interfacesOf(idx, node)[0];
-  const ip = eni ? ipsOf(eni)[0] : undefined;
-  if (eni && ip) return { range: [ipNum(ip)!, ipNum(ip)!], label: nameOf(node), isPublic: false, nodeId: node.id, eni };
+  const ip = workloadIp(node) ?? (eni ? ipsOf(eni)[0] : undefined);
+  if (eni && ip && ipNum(ip) !== null) return { range: [ipNum(ip)!, ipNum(ip)!], label: nameOf(node), isPublic: false, nodeId: node.id, eni, pod: node.kind === 'pod' ? node : undefined };
   const ipAttr = str(node.attrs?.['ip']);
   if (ipAttr && ipNum(ipAttr) !== null) { const v = ipNum(ipAttr)!; return { range: [v, v], label: `${nameOf(node)}`, isPublic: isPublicRange([v, v]), nodeId: node.id }; }
   const c = cidrRange(node.cidrs?.find(x => !!cidrRange(x)));
@@ -660,19 +711,36 @@ export function tracePath(idx: GraphIndex, q: PathQuery): PathResult {
   const w = new Walk(idx, t, d);
   w.hop({ nodeId: start.id, verdict: 'info', title: `From ${nameOf(start)}`, reason: `Tracing ${trafficText(t)} to ${d.label}.` });
 
-  const enis = interfacesOf(idx, start);
+  // a service / ingress sends nothing itself: trace from the first pod behind it
+  let from = start;
+  if (FRONT_KINDS.has(start.kind)) {
+    const pod = podFor(idx, start);
+    if (!pod) { w.end('unknown', { nodeId: start.id, verdict: 'unknown', title: 'No pods', reason: `${nameOf(start)} selects no pod in the graph.` }); return w.result(); }
+    const n = podsBehind(idx, start).length;
+    w.hop({ nodeId: pod.id, verdict: 'info', title: `Pod ${nameOf(pod)}`, reason: `Tracing from ${n > 1 ? `the first of ${n} pods` : 'the pod'} behind ${nameOf(start)}.` });
+    from = pod;
+  }
+  const srcPod = from.kind === 'pod' ? from : undefined;
+  if (srcPod && !netPolicyHop(w, srcPod, 'egress', { range: d.range, pod: d.pod })) return w.result();
+
+  const enis = interfacesOf(idx, from);
   const eni = enis[0];
+  if (!eni && (srcPod || from.kind === 'ecs-task' || from.kind === 'lambda-function')) {
+    w.end('unknown', { nodeId: from.id, verdict: 'unknown', title: 'Interface unknown', reason: `No collected interface runs ${nameOf(from)} (its address is not on any ENI in the graph).` });
+    return w.result();
+  }
   if (eni) {
-    const ip = ipsOf(eni)[0];
+    const ip = workloadIp(from) ?? ipsOf(eni)[0];
     const pub = publicIpOf(idx, eni);
-    if (eni.id !== start.id) w.hop({ nodeId: eni.id, verdict: 'info', title: `Interface ${nameOf(eni)}`, reason: `Sends from ${ip ?? 'an unknown address'}${pub ? ` (public ${pub})` : ''}${enis.length > 1 ? `; ${enis.length} interfaces, tracing the first` : ''}.` });
-    const sgs = sgsOf(idx, eni).length ? sgsOf(idx, eni) : sgsOf(idx, start);
+    const shared = srcPod ? ' — a pod IP on the node’s interface: the node’s security groups apply (security groups for pods are not modeled)' : '';
+    if (eni.id !== start.id) w.hop({ nodeId: eni.id, verdict: 'info', title: `Interface ${nameOf(eni)}`, reason: `Sends from ${ip ?? 'an unknown address'}${pub ? ` (public ${pub})` : ''}${enis.length > 1 ? `; ${enis.length} interfaces, tracing the first` : ''}${shared}.` });
+    const sgs = sgsOf(idx, eni).length ? sgsOf(idx, eni) : sgsOf(idx, from);
     const destSgs = d.eni ? sgsOf(idx, d.eni).map(s => s.id) : [];
     const c = evalSgs(idx, sgs, 'egress', d.range, destSgs, t, eni.id);
     if (!w.check(c, 'Security group egress')) return w.result();
     const subnet = subnetOf(idx, eni);
     if (!subnet) { w.end('unknown', { nodeId: eni.id, verdict: 'unknown', title: 'Subnet unknown', reason: 'The interface’s subnet is not in the graph.' }); return w.result(); }
-    fromSubnet(w, subnet, { range: ip ? [ipNum(ip)!, ipNum(ip)!] : cidrRange(subnet.cidrs?.[0]), sgIds: sgs.map(s => s.id), isPublic: !!pub, subnetId: subnet.id });
+    fromSubnet(w, subnet, { range: ip ? [ipNum(ip)!, ipNum(ip)!] : cidrRange(subnet.cidrs?.[0]), sgIds: sgs.map(s => s.id), isPublic: !!pub && !srcPod, subnetId: subnet.id, pod: srcPod });
     return w.result();
   }
 
@@ -710,9 +778,10 @@ export interface InboundQuery { from: string; protocol?: Protocol; port?: number
 export function traceInbound(idx: GraphIndex, q: InboundQuery): PathResult[] {
   const node = idx.node(q.from);
   if (!node) return [];
+  if (FRONT_KINDS.has(node.kind)) return inboundFront(idx, node, q);
   const t = traffic(q);
   const eni = interfacesOf(idx, node)[0];
-  const ip = eni ? ipsOf(eni)[0] : undefined;
+  const ip = workloadIp(node) ?? (eni ? ipsOf(eni)[0] : undefined);
   const subnet = eni ? subnetOf(idx, eni) : undefined;
   const network = subnet ? networkOf(idx, subnet) : undefined;
   const fail = (summary: string): PathResult[] => [{ outcome: 'unknown', hops: [{ nodeId: node.id, verdict: 'unknown', title: nameOf(node), reason: summary }], summary }];
@@ -720,7 +789,7 @@ export function traceInbound(idx: GraphIndex, q: InboundQuery): PathResult[] {
   const v = ipNum(ip)!;
   const target: InTarget = {
     node, eni, ip, subnet, network, sgs: sgsOf(idx, eni).length ? sgsOf(idx, eni) : sgsOf(idx, node),
-    dest: { range: [v, v], label: nameOf(node), isPublic: false, nodeId: node.id, eni },
+    dest: { range: [v, v], label: nameOf(node), isPublic: false, nodeId: node.id, eni, pod: node.kind === 'pod' ? node : undefined },
   };
   const results: PathResult[] = [];
   const direct = inboundInternet(idx, target, t);
@@ -739,6 +808,7 @@ function finishInbound(w: Walk, tg: InTarget, srcRange: Range | null, srcSgs: st
   if (srcSubnetId === tg.subnet.id) w.hop({ nodeId: tg.subnet.id, verdict: 'info', title: 'Same subnet', reason: 'Network ACLs do not apply within a subnet.' });
   else if (!w.check(evalNacl(idx, tg.subnet, false, srcRange, w.t), `Network ACL inbound (${nameOf(tg.subnet)})`)) return;
   if (!w.check(evalSgs(idx, tg.sgs, 'ingress', srcRange, srcSgs, w.t, tg.eni.id), 'Security group ingress')) return;
+  if (tg.dest.pod && !netPolicyHop(w, tg.dest.pod, 'ingress', { range: srcRange })) return;
   w.end('reaches', { nodeId: tg.node.id, verdict: 'allow', title: `Reaches ${nameOf(tg.node)}`, reason: `${trafficText(w.t)} arrives at ${tg.ip}.` });
 }
 
@@ -774,9 +844,23 @@ function inboundInternet(idx: GraphIndex, tg: InTarget, t: Traffic): PathResult 
 }
 
 function inboundLoadBalancers(idx: GraphIndex, tg: InTarget, t: Traffic): PathResult[] {
-  const targetIds = new Set([tg.node.id, tg.eni.id, ...idx.in(tg.eni.id, 'attaches').map(e => e.from)]);
   const lbs = new Map<string, GraphEdge>();
-  for (const id of targetIds) for (const e of idx.in(id, 'targets')) if (idx.node(e.from)?.kind === 'load-balancer' && !lbs.has(e.from)) lbs.set(e.from, e);
+  if (tg.node.kind === 'pod') {
+    // ip-mode targets resolved to this pod; instance-mode (NodePort) targets on its node only for a load balancer
+    // that backs a service selecting this pod
+    for (const e of idx.in(tg.node.id, 'exposes')) if (idx.node(e.from)?.kind === 'load-balancer' && !lbs.has(e.from)) lbs.set(e.from, e);
+    const fronting = new Set(idx.in(tg.node.id, 'selects').flatMap(s => { const f = idx.node(s.from); return f ? lbsOf(idx, f).map(l => l.id) : []; }));
+    for (const id of [tg.eni.id, ...idx.in(tg.eni.id, 'attaches').map(e => e.from)])
+      for (const e of idx.in(id, 'targets')) if (fronting.has(e.from) && !lbs.has(e.from) && !str(e.attrs?.['targetIp'])) lbs.set(e.from, e);
+  } else {
+    const targetIds = new Set([tg.node.id, tg.eni.id, ...idx.in(tg.eni.id, 'attaches').map(e => e.from)]);
+    for (const id of targetIds) for (const e of idx.in(id, 'targets')) {
+      if (idx.node(e.from)?.kind !== 'load-balancer' || lbs.has(e.from)) continue;
+      const tip = str(e.attrs?.['targetIp']);
+      if (tip && tip !== tg.ip) continue;   // another address on a shared interface
+      lbs.set(e.from, e);
+    }
+  }
   const out: PathResult[] = [];
   for (const [lbId, edge] of lbs) {
     const lb = idx.node(lbId)!;
@@ -911,6 +995,26 @@ function inboundVgw(idx: GraphIndex, tg: InTarget, t: Traffic): PathResult[] {
     }
   }
   return out;
+}
+
+/** Inbound to a Kubernetes service / ingress: inbound to the pods behind it (first few), through its own load
+ * balancers when it has any. */
+function inboundFront(idx: GraphIndex, front: GraphNode, q: InboundQuery): PathResult[] {
+  const pods = podsBehind(idx, front);
+  if (!pods.length) {
+    const why = `${nameOf(front)} selects no pod in the graph.`;
+    return [{ outcome: 'unknown', hops: [{ nodeId: front.id, verdict: 'unknown', title: nameOf(front), reason: why }], summary: why }];
+  }
+  const lbIds = new Set(lbsOf(idx, front).map(l => l.id));
+  const out: PathResult[] = [];
+  for (const pod of pods.slice(0, 3)) {
+    for (const r of traceInbound(idx, { ...q, from: pod.id })) {
+      if (lbIds.size && !r.hops.some(h => lbIds.has(h.nodeId))) continue;
+      out.push({ ...r, label: `${r.label ?? r.summary} · pod ${nameOf(pod)}` });
+    }
+  }
+  const rank: Record<Outcome, number> = { reaches: 0, unknown: 1, 'leaves-blueprint': 2, blocked: 3 };
+  return out.sort((a, b) => rank[a.outcome] - rank[b.outcome]);
 }
 
 /** When inbound finds no entry point: say why, so "nothing reaches it" is actionable (stopped instance, no public IP

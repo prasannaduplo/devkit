@@ -3,7 +3,8 @@ import { parseV4 } from './cidr';
 import { GraphIndex, str, strs } from './graph-index';
 import { kindInfo } from './kinds';
 
-// Find-anything box over one snapshot graph: ids, names, IPs, CIDRs and DNS names. Framework-free.
+// Find-anything box over one snapshot graph: ids, names, IPs, CIDRs and DNS names; pods / tasks / functions by name,
+// namespace/name (their native id), pod or task IP and container image; ingresses by host. Framework-free.
 
 export interface SearchHit {
   nodeId: string;
@@ -53,6 +54,12 @@ function searchIp(idx: GraphIndex, ip: string, add: Add): void {
     if (n.kind === 'network-interface') {
       if (str(a['privateIp']) === ip || strs(a['privateIps']).includes(ip)) add(n, 120, `private IP ${ip}`);
       if (str(a['publicIp']) === ip) add(n, 115, `public IP ${ip}`);
+    } else if (n.kind === 'pod') {
+      if (str(a['podIp']) === ip || strs(a['podIps']).includes(ip)) add(n, 125, `pod IP ${ip}`);
+    } else if (n.kind === 'ecs-task') {
+      if (str(a['privateIp']) === ip) add(n, 124, `task IP ${ip}`);
+    } else if (n.kind === 'k8s-service') {
+      if (str(a['clusterIp']) === ip) add(n, 105, `cluster IP ${ip}`);
     } else if (str(a['ip']) === ip || str(a['outsideIp']) === ip) add(n, 110, `address ${ip}`);
     else if (n.kind === 'nat-gateway' && strs(a['privateIps']).includes(ip)) add(n, 110, `private IP ${ip}`);
   }
@@ -102,6 +109,12 @@ function searchDomain(idx: GraphIndex, domain: string, add: Add): void {
     const dns = str(lb.attrs?.['dnsName']);
     if (dns && normDns(dns) === q) add(lb, 125, `DNS name ${dns}`);
   }
+  // Kubernetes: ingress rule hosts, and load balancer hostnames in service / ingress status
+  for (const n of [...idx.ofKind('ingress'), ...idx.ofKind('k8s-service')]) {
+    const rules = Array.isArray(n.attrs?.['rules']) ? (n.attrs!['rules'] as { host?: string }[]) : [];
+    if (rules.some(r => r.host && normDns(r.host) === q)) add(n, 125, `ingress host ${q}`);
+    else if (strs(n.attrs?.['lbHostnames']).some(h => normDns(h) === q)) add(n, 115, `load balancer hostname ${q}`);
+  }
   if (anyRecord) return;
   for (const z of idx.ofKind('dns-zone')) {
     const zn = normDns(z.name);
@@ -120,7 +133,9 @@ function searchText(idx: GraphIndex, q: string, add: Add): void {
     else if (native.startsWith(lq)) add(n, 70, 'id starts with');
     else if (name.includes(lq)) add(n, 45, 'name contains');
     else if (native.includes(lq)) add(n, 40, 'id contains');
-    else if (lq.length >= 3) {
+    else if (lq.length >= 3 && (n.kind === 'pod' || n.kind === 'ecs-task') && strs(n.attrs?.['images']).some(i => i.toLowerCase().includes(lq))) {
+      add(n, 35, `image ${strs(n.attrs?.['images']).find(i => i.toLowerCase().includes(lq))}`);
+    } else if (lq.length >= 3) {
       const tag = Object.entries(n.tags ?? {}).find(([k, v]) => v.toLowerCase().includes(lq) || k.toLowerCase() === lq);
       if (tag) add(n, 20, `tag ${tag[0]}=${tag[1]}`);
     }
