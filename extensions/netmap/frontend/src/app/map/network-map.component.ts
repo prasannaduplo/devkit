@@ -1,4 +1,6 @@
-import { Component, ElementRef, computed, effect, inject, input, output, signal, untracked, viewChild } from '@angular/core';
+import {
+  Component, DestroyRef, ElementRef, NgZone, afterNextRender, computed, effect, inject, input, output, signal, untracked, viewChild,
+} from '@angular/core';
 import { NetworkGraph } from '../model/api-types';
 import { GraphIndex } from '../model/graph-index';
 import { iconHref } from '../model/icons';
@@ -77,8 +79,8 @@ const LEVELS: { level: Level; label: string; hint: string }[] = [
         </div>
       </div>
 
-      <div #stage class="nm-stage" [class.dragging]="dragging()"
-           (wheel)="onWheel($event)" (pointerdown)="onDown($event)" (pointermove)="onMove($event)" (pointerup)="onUp()" (pointerleave)="onUp()">
+      <!-- pan/zoom listeners are registered outside NgZone in the constructor (see bindGestures) -->
+      <div #stage class="nm-stage">
         @if (needsFocus()) {
           <div class="nm-hint">Level 4 draws one network at a time — double-click a network on L1–L3, or choose it in the breadcrumb.</div>
         } @else if (busy() && !scene().boxes.length) {
@@ -86,8 +88,8 @@ const LEVELS: { level: Level; label: string; hint: string }[] = [
         }
         @if (error()) { <div class="nm-hint text-danger">Layout failed: {{ error() }}</div> }
 
-        <svg class="nm-canvas" [class.nm-calm]="calm()" [class.nm-moving]="moving()" (click)="clearSelection()">
-          <g [attr.transform]="transform()">
+        <svg #canvas class="nm-canvas" [class.nm-calm]="calm()" (click)="clearSelection()">
+          <g #world>
             @for (x of containers(); track x.b.id) {
               <g [attr.class]="x.cls" [attr.transform]="x.t" (click)="pickBox($event, x.b)" (dblclick)="drill($event, x.b)">
                 <rect class="nm-frame" [attr.width]="x.b.w" [attr.height]="x.b.h" rx="8" />
@@ -143,7 +145,11 @@ const LEVELS: { level: Level; label: string; hint: string }[] = [
 })
 export class NetworkMapComponent {
   private readonly elk = inject(ElkLayoutService);
+  private readonly zone = inject(NgZone);
+  private readonly destroyRef = inject(DestroyRef);
   private readonly stage = viewChild<ElementRef<HTMLDivElement>>('stage');
+  private readonly canvas = viewChild<ElementRef<SVGSVGElement>>('canvas');
+  private readonly world = viewChild<ElementRef<SVGGElement>>('world');
 
   readonly graph = input<NetworkGraph | null>(null);
   /** Bring a node into view: picks the level and focus that draw it, selects it and centres on it. `seq` re-triggers the same id. */
@@ -160,18 +166,22 @@ export class NetworkMapComponent {
   protected readonly scene = signal<Scene>(EMPTY_SCENE);
   protected readonly busy = signal(false);
   protected readonly error = signal('');
-  protected readonly dragging = signal(false);
-  private readonly k = signal(1);
-  private readonly tx = signal(0);
-  private readonly ty = signal(0);
+  // The view transform lives in plain fields and is written straight to the <g #world> transform attribute: the
+  // portal host runs zone-based change detection over ~900 eager components, so pan/zoom must not go through
+  // NgZone or signals per pointer/wheel event. Only the zoom % label is a signal, synced when a gesture ends.
+  private k = 1;
+  private tx = 0;
+  private ty = 0;
+  protected readonly zoomPct = signal(100);
   private runId = 0;
   /** Laid-out scenes by level|focus for the current graph: revisiting a level is instant. */
   private sceneCache = new Map<string, Scene>();
   private cacheFor?: unknown;
-  protected readonly moving = signal(false);
   private movingTimer?: ReturnType<typeof setTimeout>;
+  private wheelTimer?: ReturnType<typeof setTimeout>;
   protected readonly calm = computed(() => this.scene().edges.length > 40);
   private drag?: { x: number; y: number; tx: number; ty: number };
+  private dragging = false;
   private suppressClick = false;
   private pendingReveal?: string;
   private pendingPathFit = false;
@@ -229,10 +239,13 @@ export class NetworkMapComponent {
     const keep = this.overlay()?.keepEdges ?? null;
     return this.scene().edges.map(e => ({ e, cls: edgeClasses(e, this.selectedId()) + (keep && !keep.has(e.id) ? ' nm-dim' : '') }));
   });
-  protected readonly transform = computed(() => `translate(${this.tx()},${this.ty()}) scale(${this.k()})`);
-  protected readonly zoomPct = computed(() => Math.round(this.k() * 100));
 
   constructor() {
+    afterNextRender(() => this.bindGestures());
+    this.destroyRef.onDestroy(() => {
+      clearTimeout(this.movingTimer);
+      clearTimeout(this.wheelTimer);
+    });
     effect(() => {
       const view = this.view();
       const ctx = this.severity();
@@ -323,9 +336,7 @@ export class NetworkMapComponent {
     const h = el.clientHeight;
     const pad = 70;
     const k = Math.max(0.15, Math.min(w / (b.w + pad * 2), h / (b.h + pad * 2), 1.2));
-    this.k.set(k);
-    this.tx.set(w / 2 - (b.x + b.w / 2) * k);
-    this.ty.set(h / 2 - (b.y + b.h / 2) * k);
+    this.setView(w / 2 - (b.x + b.w / 2) * k, h / 2 - (b.y + b.h / 2) * k, k);
   }
 
   /** Select and centre the node, or — when this level folds it into something else — the nearest drawn ancestor or neighbour. */
@@ -341,10 +352,8 @@ export class NetworkMapComponent {
     this.selectedId.set(b.id);
     const el = this.stage()?.nativeElement;
     if (!el) return;
-    const k = Math.max(this.k(), 0.9);
-    this.k.set(k);
-    this.tx.set(el.clientWidth / 2 - (b.x + b.w / 2) * k);
-    this.ty.set(el.clientHeight / 2 - (b.y + b.h / 2) * k);
+    const k = Math.max(this.k, 0.9);
+    this.setView(el.clientWidth / 2 - (b.x + b.w / 2) * k, el.clientHeight / 2 - (b.y + b.h / 2) * k, k);
   }
 
   protected setLevel(l: Level): void {
@@ -395,55 +404,9 @@ export class NetworkMapComponent {
     const el = this.stage()?.nativeElement;
     const w = el?.clientWidth ?? 800;
     const h = el?.clientHeight ?? 600;
-    this.zoomAround(factor, w / 2, h / 2);
-  }
-
-  private markMoving(): void {
-    this.moving.set(true);
-    clearTimeout(this.movingTimer);
-    this.movingTimer = setTimeout(() => this.moving.set(false), 180);
-  }
-
-  protected onWheel(ev: WheelEvent): void {
-    this.markMoving();
-    ev.preventDefault();
-    const rect = this.stage()!.nativeElement.getBoundingClientRect();
-    this.zoomAround(ev.deltaY < 0 ? 1.1 : 0.9, ev.clientX - rect.left, ev.clientY - rect.top);
-  }
-
-  private zoomAround(factor: number, px: number, py: number): void {
-    const k = this.k();
-    const nk = Math.min(3, Math.max(0.15, k * factor));
-    this.tx.set(px - (px - this.tx()) * (nk / k));
-    this.ty.set(py - (py - this.ty()) * (nk / k));
-    this.k.set(nk);
-  }
-
-  protected onDown(ev: PointerEvent): void {
-    // drag starts anywhere on the canvas (boxes and lines included); a click is only a click if the pointer barely moved
-    if (ev.button !== 0 || (ev.target as Element).closest('.nm-legend')) return;
-    this.drag = { x: ev.clientX, y: ev.clientY, tx: this.tx(), ty: this.ty() };
-  }
-
-  protected onMove(ev: PointerEvent): void {
-    if (!this.drag) return;
-    const dx = ev.clientX - this.drag.x;
-    const dy = ev.clientY - this.drag.y;
-    if (!this.dragging() && Math.abs(dx) + Math.abs(dy) < 4) return;
-    this.dragging.set(true);
-    this.tx.set(this.drag.tx + dx);
-    this.ty.set(this.drag.ty + dy);
-  }
-
-  protected onUp(): void {
-    const wasDragging = this.dragging();
-    this.dragging.set(false);
-    this.drag = undefined;
-    if (wasDragging) {
-      // the click that ends a drag must not select or deselect anything
-      this.suppressClick = true;
-      setTimeout(() => (this.suppressClick = false));
-    }
+    const k = this.k;
+    const nk = clampZoom(k * factor);
+    this.setView(w / 2 - (w / 2 - this.tx) * (nk / k), h / 2 - (h / 2 - this.ty) * (nk / k), nk);
   }
 
   fit(): void {
@@ -453,8 +416,108 @@ export class NetworkMapComponent {
     const w = el.clientWidth;
     const h = el.clientHeight;
     const k = Math.min(w / s.width, h / s.height, 1.2) * 0.95;
-    this.k.set(k);
-    this.tx.set((w - s.width * k) / 2);
-    this.ty.set(Math.max(8, (h - s.height * k) / 2));
+    this.setView((w - s.width * k) / 2, Math.max(8, (h - s.height * k) / 2), k);
   }
+
+  // --- view transform -------------------------------------------------------------------------------------------
+
+  /** Programmatic moves (fit, centre, zoom buttons): already inside the zone, so the label signal updates normally. */
+  private setView(tx: number, ty: number, k: number): void {
+    this.tx = tx;
+    this.ty = ty;
+    this.k = k;
+    this.applyTransform();
+    this.zoomPct.set(Math.round(k * 100));
+  }
+
+  private applyTransform(): void {
+    this.world()?.nativeElement.setAttribute('transform', `translate(${this.tx},${this.ty}) scale(${this.k})`);
+  }
+
+  /** Gesture end (outside the zone): enter the zone only if the zoom label actually changes. */
+  private syncZoomLabel(): void {
+    const pct = Math.round(this.k * 100);
+    if (pct !== this.zoomPct()) this.zone.run(() => this.zoomPct.set(pct));
+  }
+
+  // --- pan / zoom gestures, outside NgZone ------------------------------------------------------------------------
+
+  private bindGestures(): void {
+    const stage = this.stage()?.nativeElement;
+    if (!stage) return;
+    this.applyTransform();
+    const listeners: [string, EventListener, AddEventListenerOptions | undefined][] = [
+      ['pointerdown', e => this.onDown(e as PointerEvent), undefined],
+      ['pointermove', e => this.onMove(e as PointerEvent), undefined],
+      ['pointerup', () => this.onUp(), undefined],
+      ['pointerleave', () => this.onUp(), undefined],
+      ['wheel', e => this.onWheel(e as WheelEvent), { passive: false }],
+    ];
+    this.zone.runOutsideAngular(() => {
+      for (const [type, fn, opts] of listeners) stage.addEventListener(type, fn, opts);
+    });
+    this.destroyRef.onDestroy(() => {
+      for (const [type, fn, opts] of listeners) stage.removeEventListener(type, fn, opts);
+    });
+  }
+
+  /** Pause line animations while the wheel is turning (class toggled directly; the timer runs outside the zone). */
+  private markMoving(): void {
+    this.canvas()?.nativeElement.classList.add('nm-moving');
+    clearTimeout(this.movingTimer);
+    this.movingTimer = setTimeout(() => this.canvas()?.nativeElement.classList.remove('nm-moving'), 180);
+  }
+
+  private onWheel(ev: WheelEvent): void {
+    ev.preventDefault();
+    this.markMoving();
+    const rect = this.stage()!.nativeElement.getBoundingClientRect();
+    const px = ev.clientX - rect.left;
+    const py = ev.clientY - rect.top;
+    const k = this.k;
+    const nk = clampZoom(k * (ev.deltaY < 0 ? 1.1 : 0.9));
+    this.tx = px - (px - this.tx) * (nk / k);
+    this.ty = py - (py - this.ty) * (nk / k);
+    this.k = nk;
+    this.applyTransform();
+    clearTimeout(this.wheelTimer);
+    this.wheelTimer = setTimeout(() => this.syncZoomLabel(), 150);
+  }
+
+  private onDown(ev: PointerEvent): void {
+    // drag starts anywhere on the canvas (boxes and lines included); a click is only a click if the pointer barely moved
+    if (ev.button !== 0 || (ev.target as Element).closest('.nm-legend')) return;
+    this.drag = { x: ev.clientX, y: ev.clientY, tx: this.tx, ty: this.ty };
+  }
+
+  private onMove(ev: PointerEvent): void {
+    if (!this.drag) return;
+    const dx = ev.clientX - this.drag.x;
+    const dy = ev.clientY - this.drag.y;
+    if (!this.dragging) {
+      if (Math.abs(dx) + Math.abs(dy) < 4) return;
+      this.dragging = true;
+      this.stage()?.nativeElement.classList.add('dragging');
+    }
+    this.tx = this.drag.tx + dx;
+    this.ty = this.drag.ty + dy;
+    this.applyTransform();
+  }
+
+  private onUp(): void {
+    const wasDragging = this.dragging;
+    this.dragging = false;
+    this.drag = undefined;
+    if (!wasDragging) return;
+    this.stage()?.nativeElement.classList.remove('dragging');
+    // the click that ends a drag must not select or deselect anything (the click handlers run in the zone and read
+    // this flag; the timer is created here, outside the zone, so clearing it costs no change detection)
+    this.suppressClick = true;
+    setTimeout(() => (this.suppressClick = false));
+    this.syncZoomLabel();   // a pan leaves k unchanged, so this normally does nothing
+  }
+}
+
+function clampZoom(k: number): number {
+  return Math.min(3, Math.max(0.15, k));
 }
