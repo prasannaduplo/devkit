@@ -4,9 +4,12 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { Subscription, interval } from 'rxjs';
 import { CommonLibComponentsModule } from '@duplocloud-internal/ng-common-lib';
-import { CapabilityState, NetworkBlueprint, NetworkGraph, SnapshotHeader } from '../model/api-types';
+import { CapabilityState, NetworkBlueprint, NetworkGraph, SnapshotHeader, WorkspaceScope } from '../model/api-types';
 import { GraphIndex } from '../model/graph-index';
 import { kindInfo } from '../model/kinds';
+import { outsideMember, scopeForAccount, specWithMember } from '../model/outside';
+import { PathResult, Verdict, traceInbound, tracePath } from '../model/path';
+import { memberKey } from '../model/picker';
 import { dnsData, egressRows, findingRows, flowLogRows, hubRows, inventoryRows, peeringRows, vpnRows } from '../model/tables';
 import { MapSelection, NetworkMapComponent } from '../map/network-map.component';
 import { NetworkBlueprintService } from '../network-blueprint.service';
@@ -14,6 +17,7 @@ import { IconSpriteComponent } from '../shared/icon-sprite.component';
 import { NmColumn, NmTableComponent } from '../shared/nm-table.component';
 import { StatusBadgeComponent } from '../shared/status-badge.component';
 import { InventoryTabComponent } from './inventory-tab.component';
+import { TraceBarComponent, TraceRequest } from './trace-bar.component';
 
 type Tab = 'map' | 'inventory' | 'egress' | 'vpn' | 'transit' | 'peering' | 'dns' | 'flowlogs' | 'findings' | 'snapshots';
 
@@ -71,7 +75,7 @@ const COLS: Record<string, NmColumn[]> = {
 
 @Component({
   selector: 'nm-detail',
-  imports: [CommonLibComponentsModule, StatusBadgeComponent, IconSpriteComponent, NetworkMapComponent, NmTableComponent, InventoryTabComponent],
+  imports: [CommonLibComponentsModule, StatusBadgeComponent, IconSpriteComponent, NetworkMapComponent, NmTableComponent, InventoryTabComponent, TraceBarComponent],
   styleUrl: '../shared/detail-page.scss',
   styles: [`
     .nm-progress { margin: 12px 0; padding: 10px 14px; border-radius: 10px; background: #eef8f9; border: 1px solid #c8e9ed; color: #096570; font-size: .85rem; }
@@ -108,8 +112,29 @@ const COLS: Record<string, NmColumn[]> = {
     .nm-side { flex: 0 0 340px; max-height: 720px; overflow: auto; border: 1px solid #ebe9f1; border-radius: 10px; background: #fff; padding: 12px; }
     .nm-side h4 { font-size: 1rem; margin: 0 0 2px; }
     .nm-side .sub { color: #8a8797; font-size: .8rem; margin-bottom: 10px; word-break: break-all; }
-    .nm-kv { display: grid; grid-template-columns: 110px 1fr; gap: 4px 8px; font-size: .8rem; margin-bottom: 10px; }
-    .nm-kv .k { color: #8a8797; } .nm-kv .v { word-break: break-all; font-family: ui-monospace, monospace; }
+    .nm-kv { display: grid; grid-template-columns: minmax(90px, 38%) minmax(0, 1fr); gap: 4px 8px; font-size: .8rem; margin-bottom: 10px; }
+    .nm-kv .k { color: #8a8797; overflow-wrap: anywhere; min-width: 0; } .nm-kv .v { overflow-wrap: anywhere; min-width: 0; font-family: ui-monospace, monospace; }
+    .nm-kv-h { font-size: .7rem; text-transform: uppercase; letter-spacing: .05em; color: #6e6b7b; font-weight: 700; margin: 12px 0 4px; border-top: 1px solid #f0eef5; padding-top: 8px; }
+    .nm-side .act { margin: 4px 0 10px; }
+    .nm-outcome { border-radius: 8px; padding: 8px 10px; margin: 6px 0 10px; font-size: .85rem; font-weight: 700; }
+    .nm-outcome .small { font-weight: 400; margin-top: 2px; }
+    .nm-outcome.o-reaches { background: #e8f6ee; color: #1d7a3e; }
+    .nm-outcome.o-blocked { background: #fdecea; color: #b42318; }
+    .nm-outcome.o-unknown, .nm-outcome.o-leaves-blueprint { background: #fdf3e2; color: #9a5b0c; }
+    .nm-entries { display: flex; flex-direction: column; gap: 2px; margin: 6px 0; max-height: 180px; overflow: auto; }
+    .nm-entries button { text-align: left; border: 1px solid #ebe9f1; background: #fff; border-radius: 6px; padding: 4px 8px; font-size: .78rem; cursor: pointer; }
+    .nm-entries button.active { border-color: #0d8f9e; background: #eef8f9; }
+    .nm-hops { list-style: none; padding: 0; margin: 0; counter-reset: hop; }
+    .nm-hops li { display: grid; grid-template-columns: 22px 18px minmax(0, 1fr); gap: 4px; padding: 6px 4px; border-bottom: 1px solid #f3f2f7; cursor: pointer; font-size: .8rem; }
+    .nm-hops li:hover { background: #f7f9fb; }
+    .nm-hops .n { color: #8a8797; font-variant-numeric: tabular-nums; text-align: right; }
+    .nm-hops .vi { font-weight: 700; text-align: center; }
+    .nm-hops .v-allow .vi { color: #1d7a3e; } .nm-hops .v-block .vi { color: #b42318; } .nm-hops .v-unknown .vi { color: #9a5b0c; } .nm-hops .v-info .vi { color: #8a8797; }
+    .nm-hops .t { font-weight: 600; overflow-wrap: anywhere; }
+    .nm-hops .r { color: #6e6b7b; overflow-wrap: anywhere; }
+    .nm-hops code { display: block; margin-top: 2px; font-size: .72rem; color: #344054; background: #f6f7f9; border-radius: 4px; padding: 2px 5px; overflow-wrap: anywhere; white-space: normal; }
+    .nm-outside { border: 1px dashed #d9a74a; border-radius: 8px; padding: 8px 10px; margin-bottom: 10px; font-size: .8rem; }
+    .nm-outside select { margin: 6px 0; }
     .nm-side pre { font-size: .72rem; background: #f6f7f9; border-radius: 6px; padding: 8px; max-height: 280px; overflow: auto; }
     .nm-side .x { float: right; cursor: pointer; color: #8a8797; }
     .nm-sec-h { font-weight: 700; font-size: .85rem; margin: 12px 0 6px; }
@@ -199,7 +224,10 @@ const COLS: Record<string, NmColumn[]> = {
         <div class="nm-body">
           <div class="nm-main">
             @switch (tab()) {
-              @case ('map') { <nm-network-map [graph]="graph()" [reveal]="reveal()" (selected)="selection.set($event)" /> }
+              @case ('map') {
+                <nm-trace-bar [index]="idx()" [(source)]="traceSource" (picked)="onPicked($event)" (trace)="runTrace($event)" />
+                <nm-network-map [graph]="graph()" [reveal]="reveal()" [path]="activePath()" (selected)="selection.set($event)" (clearPath)="clearTrace()" />
+              }
               @case ('inventory') { <nm-inventory-tab [rows]="inventory()" [fileName]="it.name + '-inventory'" (rowClick)="selectNode({ id: $event })" /> }
               @case ('egress') { <nm-table [columns]="cols['egress']" [rows]="egress()" [clickable]="true" empty="No member subnets collected." (rowClick)="selectNode($event)" /> }
               @case ('vpn') { <nm-table [columns]="cols['vpn']" [rows]="vpn()" [clickable]="true" empty="No site-to-site VPN connections reach these networks." (rowClick)="selectNode($event)" /> }
@@ -214,7 +242,7 @@ const COLS: Record<string, NmColumn[]> = {
                 <nm-table [columns]="cols['endpoints']" [rows]="dns().endpoints" [clickable]="true" empty="No resolver endpoints." (rowClick)="selectNode($event)" />
               }
               @case ('flowlogs') { <nm-table [columns]="cols['flowlogs']" [rows]="flowLogs()" [clickable]="true" empty="No member networks collected." (rowClick)="selectNode($event)" /> }
-              @case ('findings') { <nm-table [columns]="cols['findings']" [rows]="findings()" empty="No findings." /> }
+              @case ('findings') { <nm-table [columns]="cols['findings']" [rows]="findings()" [clickable]="true" empty="No findings." (rowClick)="selectNode({ id: $event['nodeId'] })" /> }
               @case ('snapshots') {
                 <nm-table [columns]="cols['snapshots']" [rows]="snapshotRows()" [clickable]="true" empty="No snapshots yet." (rowClick)="selectedSnapshot.set($event['id'])" />
                 @if (unitRows().length) {
@@ -225,12 +253,63 @@ const COLS: Record<string, NmColumn[]> = {
             }
           </div>
 
-          @if (panel(); as p) {
+          @if (traceView(); as tv) {
+            <aside class="nm-side" aria-live="polite">
+              <span class="x" title="Close the trace" (click)="clearTrace()">✕</span>
+              <h4>{{ tv.title }}</h4>
+              <div class="sub">{{ tv.sub }}</div>
+              @if (tv.entries.length > 1) {
+                <div class="small text-muted">{{ tv.entries.length }} entry points</div>
+                <div class="nm-entries">
+                  @for (e of tv.entries; track $index) {
+                    <button type="button" [class.active]="$index === tv.active" (click)="traceActive.set($index)">{{ e.icon }} {{ e.label }}</button>
+                  }
+                </div>
+              }
+              @if (tv.path; as path) {
+                <div class="nm-outcome" [class]="'nm-outcome o-' + path.outcome">{{ tv.outcomeText }}<div class="small">{{ path.summary }}</div></div>
+                @if (outsideInfo(); as o) {
+                  <div class="nm-outside">
+                    @if (o.addable) {
+                      @if (o.member) {
+                        <div><b>{{ o.name }}</b> is already in this blueprint — waiting for the scan that collects it.</div>
+                      } @else {
+                        <div>Outside this blueprint — add <b>{{ o.name }}</b> and rescan.</div>
+                        <div class="small text-muted">{{ o.account ? 'Account ' + o.account + ' · ' : '' }}{{ o.region }}</div>
+                        @if (!o.auto) {
+                          <select class="custom-select custom-select-sm form-control-sm" [value]="outsideScope()" (change)="outsideScope.set($any($event.target).value)" aria-label="Scope that can read this network">
+                            <option value="">Choose the scope that can read it…</option>
+                            @for (sc of scopes(); track sc.id) { <option [value]="sc.id">{{ sc.name }}</option> }
+                          </select>
+                        } @else { <div class="small">Using the scope of the other members in that account.</div> }
+                        <button type="button" class="btn btn-sm btn-primary mt-50" [disabled]="adding() || scanInFlight() || !(o.auto || outsideScope())" (click)="addOutside()">{{ adding() ? 'Adding…' : 'Add to blueprint and rescan' }}</button>
+                      }
+                    } @else {
+                      <div>Leaves to <b>{{ o.name }}</b> — what happens beyond it is not visible from this blueprint.</div>
+                    }
+                  </div>
+                }
+                <ol class="nm-hops">
+                  @for (h of path.hops; track $index) {
+                    <li [class]="'v-' + h.verdict" (click)="revealHop(h.nodeId)" [title]="'Show on the map'">
+                      <span class="n">{{ $index + 1 }}</span><span class="vi">{{ icon(h.verdict) }}</span>
+                      <div><div class="t">{{ h.title }}</div><div class="r">{{ h.reason }}</div>@if (h.rule) { <code>{{ h.rule }}</code> }</div>
+                    </li>
+                  }
+                </ol>
+              } @else {
+                <p class="small text-muted mt-1">No entry points into this resource were found in the graph — no public IP, load balancer, hub route, peering or VPN reaches it.</p>
+              }
+            </aside>
+          } @else if (panel(); as p) {
             <aside class="nm-side">
               <span class="x" title="Close" (click)="selection.set(null)">✕</span>
               <h4>{{ p.title }}</h4>
               <div class="sub">{{ p.sub }}</div>
+              @if (p.nodeId) { <div class="act"><button type="button" class="btn btn-sm btn-outline-primary" (click)="traceFrom(p.nodeId)">Trace path</button></div> }
               @if (p.rows.length) { <div class="nm-kv">@for (r of p.rows; track r[0]) { <span class="k">{{ r[0] }}</span><span class="v">{{ r[1] }}</span> }</div> }
+              @if (p.tags.length) { <div class="nm-kv-h">Tags</div><div class="nm-kv">@for (r of p.tags; track r[0]) { <span class="k">{{ r[0] }}</span><span class="v">{{ r[1] }}</span> }</div> }
+              @if (p.attrs.length) { <div class="nm-kv-h">Attributes</div><div class="nm-kv">@for (r of p.attrs; track r[0]) { <span class="k">{{ r[0] }}</span><span class="v">{{ r[1] }}</span> }</div> }
               @if (p.list.length) { <ul class="small pl-1">@for (l of p.list; track l) { <li>{{ l }}</li> }</ul> }
               @if (p.raw) { <details><summary class="small">Raw (sanitized)</summary><pre>{{ p.raw }}</pre></details> }
             </aside>
@@ -307,7 +386,58 @@ export class BlueprintDetailComponent implements OnInit {
   private readonly openedAt = Date.now();
 
   protected readonly latest = computed(() => this.item()?.result?.latestSummary ?? null);
-  private readonly idx = computed(() => (this.graph() ? new GraphIndex(this.graph()!) : null));
+  protected readonly idx = computed(() => (this.graph() ? new GraphIndex(this.graph()!) : null));
+
+  // --- path tracing -------------------------------------------------------------------------------------------
+  protected readonly traceSource = signal<string | null>(null);
+  private readonly traceReq = signal<TraceRequest | null>(null);
+  protected readonly traceActive = signal(0);
+  /** Re-runs on a new snapshot: the query is kept, the graph changes. */
+  private readonly traceResults = computed<PathResult[]>(() => {
+    const idx = this.idx();
+    const q = this.traceReq();
+    if (!idx || !q) return [];
+    return q.direction === 'inbound' ? traceInbound(idx, q) : [tracePath(idx, q)];
+  });
+  protected readonly activePath = computed(() => {
+    const rs = this.traceResults();
+    return rs.length ? rs[Math.min(this.traceActive(), rs.length - 1)] : null;
+  });
+  protected readonly traceView = computed(() => {
+    const q = this.traceReq();
+    const idx = this.idx();
+    if (!q || !idx) return null;
+    const from = idx.node(q.from);
+    const name = from ? from.name || from.nativeId : q.from;
+    const traffic = q.protocol === 'tcp' || q.protocol === 'udp' ? `${q.protocol}/${q.port}` : q.protocol === 'all' ? 'all traffic' : 'icmp';
+    const to = !q.to || q.to.kind === 'internet' ? 'the internet' : q.to.kind === 'ip' ? q.to.ip : idx.node(q.to.id)?.name ?? q.to.id;
+    const path = this.activePath();
+    const rs = this.traceResults();
+    return {
+      title: q.direction === 'inbound' ? `Inbound to ${name}` : `Path from ${name}`,
+      sub: q.direction === 'inbound' ? `${traffic} from every entry point found` : `${traffic} → ${to}`,
+      entries: rs.map(r => ({ label: r.label ?? r.summary, icon: OUTCOME_ICON[r.outcome] })),
+      active: path ? rs.indexOf(path) : 0,
+      path,
+      outcomeText: path ? OUTCOME_TEXT[path.outcome] + (path.uncertain ? ' (not every check could be verified)' : '') : '',
+    };
+  });
+
+  protected readonly scopes = signal<WorkspaceScope[]>([]);
+  protected readonly outsideScope = signal('');
+  protected readonly adding = signal(false);
+  protected readonly outsideInfo = computed(() => {
+    const p = this.activePath();
+    const idx = this.idx();
+    const spec = this.item()?.spec;
+    if (!p || p.outcome !== 'leaves-blueprint' || !p.outside || !idx || !spec) return null;
+    const n = idx.node(p.outside.nodeId);
+    const name = (n?.attrs?.['nameHint'] as string) || n?.name || n?.nativeId || p.outside.nodeId.split(':').slice(4).join(':');
+    const addable = n?.kind === 'network' && !!p.outside.networkNativeId;
+    const auto = addable ? scopeForAccount(idx, spec.members ?? [], p.outside.account) : undefined;
+    const member = addable && (spec.members ?? []).some(m => memberKey(m) === memberKey({ provider: n!.provider || 'aws', region: n!.region ?? p.outside!.region ?? '', networkId: n!.nativeId }));
+    return { name, addable, auto, member, account: p.outside.account, region: p.outside.region ?? n?.region ?? '' };
+  });
 
   protected readonly labels = computed(() => Object.entries(this.item()?.spec?.labels ?? {}).map(([k, v]) => `${k}=${v}`));
   protected readonly memberSummary = computed(() => {
@@ -357,7 +487,7 @@ export class BlueprintDetailComponent implements OnInit {
     const idx = this.idx();
     if (!sel || !idx) return null;
     if (sel.kind === 'aggregate') {
-      return { title: sel.label, sub: 'Site-to-site VPN connections', rows: [] as [string, string][], list: sel.memberIds.map(id => idx.node(id)?.name ?? id), raw: '' };
+      return { title: sel.label, sub: 'Site-to-site VPN connections', nodeId: '', rows: [] as [string, string][], tags: [] as [string, string][], attrs: [] as [string, string][], list: sel.memberIds.map(id => idx.node(id)?.name ?? id), raw: '' };
     }
     if (sel.kind === 'edge') {
       const name = (id: string) => idx.node(id)?.name ?? id.replace(/^agg:vpn-sites:/, 'VPN sites → ');
@@ -365,7 +495,10 @@ export class BlueprintDetailComponent implements OnInit {
       return {
         title: `${name(sel.from)} → ${name(sel.to)}`,
         sub: `${sel.count} relationship${sel.count === 1 ? '' : 's'} · ${sel.kinds.join(', ')}`,
+        nodeId: '',
         rows: [] as [string, string][],
+        tags: [] as [string, string][],
+        attrs: [] as [string, string][],
         list: underlying.map(e => `${e!.kind}: ${idx.node(e!.from)?.name ?? e!.from} → ${idx.node(e!.to)?.name ?? e!.to}${e!.attrs && Object.keys(e!.attrs).length ? ` (${Object.entries(e!.attrs).map(([k, v]) => `${k}=${typeof v === 'object' ? JSON.stringify(v) : v}`).join(', ')})` : ''}`),
         raw: '',
       };
@@ -375,14 +508,71 @@ export class BlueprintDetailComponent implements OnInit {
     const rows: [string, string][] = [
       ['Kind', kindInfo(n.kind).label], ['Id', n.nativeId], ['Account', n.ownerAccount ?? n.account ?? '—'], ['Region', n.region ?? '—'],
       ['Visibility', n.visibility], ['Membership', n.membership], ['State', n.state ?? '—'], ['Seen from', (n.seenFrom ?? []).join(', ') || '—'],
-      ...Object.entries(n.tags ?? {}).map(([k, v]) => [`tag ${k}`, v] as [string, string]),
-      ...Object.entries(n.attrs ?? {}).map(([k, v]) => [k, typeof v === 'object' ? JSON.stringify(v) : String(v)] as [string, string]),
     ];
-    return { title: n.name, sub: n.id, rows, list: [] as string[], raw: n.raw ? JSON.stringify(n.raw, null, 2) : '' };
+    const tags = Object.entries(n.tags ?? {}).map(([k, v]) => [k, v] as [string, string]);
+    const attrs = Object.entries(n.attrs ?? {}).map(([k, v]) => [k, typeof v === 'object' ? JSON.stringify(v) : String(v)] as [string, string]);
+    return { title: n.name, sub: n.id, nodeId: n.id, rows, tags, attrs, list: [] as string[], raw: n.raw ? JSON.stringify(n.raw, null, 2) : '' };
   });
 
   ngOnInit(): void {
     this.load();
+    this.svc.scopes().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({ next: s => this.scopes.set(s ?? []), error: () => this.scopes.set([]) });
+  }
+
+  /** A search hit: drop any previous trace and open the resource on the map with its details. */
+  protected onPicked(id: string): void {
+    this.clearTrace();
+    this.selectNode({ id });
+  }
+
+  protected runTrace(req: TraceRequest): void {
+    this.traceSource.set(req.from);
+    this.traceActive.set(0);
+    this.traceReq.set(req);
+    this.tab.set('map');
+  }
+
+  /** The node panel's "Trace path": outbound to the internet on tcp/443; the bar then offers the other options. */
+  protected traceFrom(id: string): void {
+    this.runTrace({ from: id, direction: 'outbound', to: { kind: 'internet' }, protocol: 'tcp', port: 443 });
+  }
+
+  protected clearTrace(): void {
+    this.traceReq.set(null);
+    this.outsideScope.set('');
+  }
+
+  protected revealHop(id: string): void {
+    if (!this.idx()?.node(id)) return;
+    this.reveal.set({ id, seq: (this.reveal()?.seq ?? 0) + 1 });
+  }
+
+  protected icon(v: Verdict): string {
+    return VERDICT_ICON[v];
+  }
+
+  /** Add the outside network the path ran into and rescan (PATCH sends the full spec). */
+  protected addOutside(): void {
+    const it = this.item();
+    const idx = this.idx();
+    const p = this.activePath();
+    const info = this.outsideInfo();
+    if (!it || !idx || !p?.outside || !info?.addable) return;
+    const member = outsideMember(idx, p.outside, info.auto ?? this.outsideScope());
+    if (!member) return;
+    this.adding.set(true);
+    this.svc.update(it.id, specWithMember(it.spec, member)).subscribe({
+      next: () => {
+        this.adding.set(false);
+        this.awaiting.set(true);
+        this.ensurePolling(true);
+        this.load();
+      },
+      error: err => {
+        this.adding.set(false);
+        alert(NetworkBlueprintService.errorMessage(err));
+      },
+    });
   }
 
   private load(): void {
@@ -485,6 +675,12 @@ export class BlueprintDetailComponent implements OnInit {
 }
 
 interface Step { id: string; label: string; cls: string; icon: string; title: string }
+
+const VERDICT_ICON: Record<Verdict, string> = { allow: '✓', block: '✕', unknown: '?', info: '•' };
+const OUTCOME_ICON: Record<PathResult['outcome'], string> = { reaches: '✓', blocked: '✕', unknown: '?', 'leaves-blueprint': '↗' };
+const OUTCOME_TEXT: Record<PathResult['outcome'], string> = {
+  reaches: 'Reachable', blocked: 'Blocked', unknown: 'Could not be determined', 'leaves-blueprint': 'Leaves this blueprint',
+};
 
 const COLLECTOR_LABEL: Record<string, string> = {
   'aws.core-network': 'VPCs, subnets & routes', 'aws.interfaces': 'Interfaces & workloads', 'aws.load-balancers': 'Load balancers',
