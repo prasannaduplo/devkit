@@ -45,6 +45,8 @@ describe('tables on the synthetic hub', () => {
 
   it('findings and inventory', () => {
     expect(findingRows(idx).map(f => f.ruleId).sort()).toEqual(['NET-001', 'NET-003']);
+    // every finding carries a resource the map can reveal
+    for (const f of findingRows(idx)) expect(idx.node(f.nodeId)).toBeTruthy();
     const inv = inventoryRows(idx);
     expect(inv).toHaveLength(fx.graph.nodes.length);
     expect(filterInventory(inv, { kind: 'subnet' })).toHaveLength(5);

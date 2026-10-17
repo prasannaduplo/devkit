@@ -178,7 +178,7 @@ export function flowLogRows(idx: GraphIndex): FlowLogRow[] {
   }).sort(byText(r => r.network));
 }
 
-export interface FindingRow { id: string; ruleId: string; severity: string; message: string; resources: string }
+export interface FindingRow { id: string; ruleId: string; severity: string; message: string; resources: string; /** First resource that is in the graph — the map reveals it. */ nodeId: string }
 
 export function findingRows(idx: GraphIndex): FindingRow[] {
   const rank: Record<string, number> = { bad: 0, warn: 1, ok: 2 };
@@ -188,6 +188,7 @@ export function findingRows(idx: GraphIndex): FindingRow[] {
     severity: f.severity,
     message: f.message,
     resources: f.nodeIds.map(id => nameOf(idx, id)).join(', '),
+    nodeId: f.nodeIds.find(id => !!idx.node(id)) ?? f.nodeIds[0] ?? '',
   })).sort((a, b) => (rank[a.severity] ?? 3) - (rank[b.severity] ?? 3) || a.ruleId.localeCompare(b.ruleId));
 }
 
