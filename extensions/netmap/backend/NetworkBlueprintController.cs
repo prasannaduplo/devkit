@@ -4,6 +4,7 @@ using Duplo.Ai.DataManagement.Controllers.User.Resource;
 using Duplo.Ai.DataManagement.Models;
 using Duplo.Ai.Model.Interfaces;
 using Duplo.Extension.NetMap.Core.Graph;
+using Duplo.Extension.NetMap.Core.K8s;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 
@@ -31,6 +32,12 @@ public class NetworkBlueprintController : ResourcesController<NetworkBlueprint, 
     [HttpGet("picker/vpcs")]
     public Task<IActionResult> PickerVpcs(string workspaceId, [FromQuery] string scopeId, [FromQuery] string region, CancellationToken ct) =>
         Guard(async () => Ok(ApiResponse<List<PickerVpc>>.SuccessResult(await _blueprints.ListVpcsAsync(scopeId, region, ct))));
+
+    /// <summary>v2b spike diagnostic: per EKS cluster in the region, whether the scope's AWS identity reaches and can
+    /// read the Kubernetes API. Read-only; never returns the bearer token.</summary>
+    [HttpGet("picker/k8s")]
+    public Task<IActionResult> PickerK8s(string workspaceId, [FromQuery] string scopeId, [FromQuery] string region, CancellationToken ct) =>
+        Guard(async () => Ok(ApiResponse<List<K8sProbeResult>>.SuccessResult(await _blueprints.ProbeK8sAsync(scopeId, region, ct))));
 
     [HttpGet("{id}/snapshots")]
     public Task<IActionResult> Snapshots(string workspaceId, string id, CancellationToken ct) => Guard(async () =>

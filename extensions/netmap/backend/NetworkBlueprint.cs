@@ -1,5 +1,8 @@
 using Amazon.EC2;
 using Amazon.EC2.Model;
+using Amazon.EKS;
+using Amazon.Runtime;
+using Amazon.SecurityToken;
 using Duplo.Ai.DataManagement.Interfaces;
 using Duplo.Ai.DataManagement.Services;
 using Duplo.Ai.DataManagement.Utils;
@@ -9,6 +12,7 @@ using Duplo.Ai.Model.Resource;
 using Duplo.Ai.Studio.Extensibility.Infra;
 using Duplo.Extension.NetMap.Core.Aws;
 using Duplo.Extension.NetMap.Core.Graph;
+using Duplo.Extension.NetMap.Core.K8s;
 using Duplo.Extension.NetMap.Core.Scan;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -207,6 +211,25 @@ public class NetworkBlueprintService : ResourceServiceBase<NetworkBlueprint, Net
             var name = tags.GetValueOrDefault("Name") is { Length: > 0 } n ? n : v.VpcId;
             return new PickerVpc(v.VpcId, name, cidrs, subnetCounts.GetValueOrDefault(v.VpcId), tags, v.IsDefault ?? false);
         }).OrderBy(v => v.Name, StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    /// <summary>v2b spike: can this scope's AWS identity read Kubernetes in the region's EKS clusters? Read-only:
+    /// eks:ListClusters / eks:DescribeCluster, sts:GetCallerIdentity, then GET /version and SelfSubjectAccessReviews
+    /// with an EKS bearer token built from the same credentials. The token never leaves this method.</summary>
+    public async Task<List<K8sProbeResult>> ProbeK8sAsync(string scopeId, string region, CancellationToken ct)
+    {
+        await AuthorizeScopesAsync(new[] { scopeId }, ct);
+        if (string.IsNullOrWhiteSpace(region) || Amazon.RegionEndpoint.GetBySystemName(region).DisplayName == "Unknown")
+            throw new ArgumentException($"Unknown region '{region}'.");
+        AWSCredentials? creds = null;
+        using var eks = await _clients.CreateAwsClientAsync(new[] { scopeId }, region, (c, r) => { creds = c; return new AmazonEKSClient(c, r); }, ct: ct);
+        using var sts = await _clients.CreateAwsClientAsync(new[] { scopeId }, region, (c, r) => new AmazonSecurityTokenServiceClient(c, r), ct: ct);
+        if (creds == null) throw new InvalidOperationException($"No AWS credentials resolved for scope '{scopeId}'.");
+        var results = await new EksProbe().ProbeAsync(eks, sts, creds, region, ct);
+        _logger.LogInformation("K8s probe scope {ScopeId} region {Region}: {Clusters} cluster(s), {Reachable} reachable, {Readable} readable",
+            scopeId, region, results.Count, results.Count(r => r.ApiReachable),
+            results.Count(r => r.CanListPods == true && r.CanListServices == true && r.CanListNetworkPolicies == true));
+        return results;
     }
 
     public async Task<List<SnapshotHeader>> ListSnapshotsAsync(NetworkBlueprint bp, CancellationToken ct)
