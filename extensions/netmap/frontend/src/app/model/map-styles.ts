@@ -30,6 +30,20 @@ export const MAP_CSS = `
 .nm-flow.selected{stroke-width:3.2;}
 .nm-hit{fill:none;stroke:transparent;stroke-width:12;cursor:pointer;}
 .nm-count{font:600 9px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;fill:var(--nm-ink-soft);paint-order:stroke;stroke:var(--nm-bg);stroke-width:3px;}
+.nm-dim{opacity:.16;transition:opacity .2s;}
+.nm-flow.nm-dim{animation:none;}
+.nm-trace-layer{pointer-events:none;}
+.nm-trace-under{fill:none;stroke:var(--nm-bg);stroke-width:7;stroke-linecap:round;opacity:.85;}
+.nm-trace{fill:none;stroke-width:3.4;stroke-linecap:round;stroke-dasharray:1 8;animation:nm-march .8s linear infinite;}
+.nm-trace.sev-ok{stroke:var(--nm-ok);}
+.nm-trace.sev-warn{stroke:var(--nm-warn);}
+.nm-trace.sev-bad{stroke:var(--nm-bad);}
+.nm-badge rect{fill:var(--nm-surface);stroke-width:2;}
+.nm-badge.sev-ok rect{stroke:var(--nm-ok);}
+.nm-badge.sev-warn rect{stroke:var(--nm-warn);}
+.nm-badge.sev-bad rect{stroke:var(--nm-bad);fill:var(--nm-bad);}
+.nm-badge text{font:700 10px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;fill:var(--nm-ink);}
+.nm-badge.sev-bad text{fill:#fff;}
 @keyframes nm-march{to{stroke-dashoffset:-16;}}
-@media (prefers-reduced-motion: reduce){.nm-flow{animation:none;}}
+@media (prefers-reduced-motion: reduce){.nm-flow,.nm-trace{animation:none;}}
 `;

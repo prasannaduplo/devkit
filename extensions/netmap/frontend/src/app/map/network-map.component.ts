@@ -1,9 +1,11 @@
-import { Component, ElementRef, computed, effect, inject, input, output, signal, viewChild } from '@angular/core';
+import { Component, ElementRef, computed, effect, inject, input, output, signal, untracked, viewChild } from '@angular/core';
 import { NetworkGraph } from '../model/api-types';
 import { GraphIndex } from '../model/graph-index';
 import { iconHref } from '../model/icons';
 import { EMPTY_SCENE, Scene, SceneBox, SceneEdge } from '../model/layout';
 import { MAP_CSS } from '../model/map-styles';
+import { PathResult } from '../model/path';
+import { pathLevel, pathOverlay } from '../model/path-overlay';
 import { boxClasses, edgeClasses } from '../model/scene-svg';
 import { buildSeverity } from '../model/severity';
 import { Level, computeView } from '../model/zoom';
@@ -41,6 +43,12 @@ const LEVELS: { level: Level; label: string; hint: string }[] = [
     .nm-hint { position: absolute; top: 16px; left: 16px; right: 16px; z-index: 2; background: var(--nm-surface); border: 1px solid var(--nm-line); border-radius: 8px; padding: 8px 12px; font-size: 12.5px; color: var(--nm-ink-soft); }
     .nm-legend { position: absolute; right: 12px; bottom: 12px; z-index: 2; background: var(--nm-surface); border: 1px solid var(--nm-line); border-radius: 10px; padding: 8px 12px; display: flex; gap: 10px 14px; flex-wrap: wrap; max-width: 520px; font: 11px ui-monospace, monospace; color: var(--nm-ink-soft); }
     .nm-legend i { display: inline-block; width: 22px; height: 0; border-top: 2px dashed; vertical-align: middle; margin-right: 5px; }
+    .nm-chip-f { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; padding: 2px 4px 2px 10px; border-radius: 1rem; background: var(--nm-surface-2); color: var(--nm-ink-soft); max-width: 280px; }
+    .nm-chip-f span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .nm-chip-f b { color: var(--nm-ink); font-weight: 600; }
+    .nm-chip-f button { border: 0; background: none; color: var(--nm-faint); cursor: pointer; padding: 0 6px; font-size: 12px; line-height: 1; }
+    .nm-chip-f button:hover { color: var(--nm-ink); }
+    .nm-chip-f.path { background: var(--nm-choke-bg); }
     .nm-legend b { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: middle; margin-right: 5px; border: 1px solid; }
   `],
   template: `
@@ -55,6 +63,12 @@ const LEVELS: { level: Level; label: string; hint: string }[] = [
           <a (click)="setFocus(undefined)">Whole blueprint</a>
           @for (c of crumbs(); track c.id) { <span>›</span><a (click)="setFocus(c.id)">{{ c.name }}</a> }
         </nav>
+        @if (focusName(); as f) {
+          <span class="nm-chip-f" [title]="'Focused on ' + f"><span>Focused on <b>{{ f }}</b></span><button type="button" title="Clear focus" aria-label="Clear focus" (click)="setFocus(undefined)">✕</button></span>
+        }
+        @if (overlay(); as o) {
+          <span class="nm-chip-f path"><span>Path · {{ path()!.hops.length }} hops</span><button type="button" title="Clear the path" aria-label="Clear the path" (click)="clearPath.emit()">✕</button></span>
+        }
         <div class="nm-zoom">
           <button type="button" title="Zoom out" (click)="zoomBy(0.85)">−</button>
           <span>{{ zoomPct() }}%</span>
@@ -95,6 +109,21 @@ const LEVELS: { level: Level; label: string; hint: string }[] = [
                 @if (x.b.sublabel) { <text class="nm-sub" [attr.x]="x.b.lx" [attr.y]="x.b.sy">{{ x.b.sublabel }}</text> }
               </g>
             }
+            @if (overlay(); as o) {
+              <g class="nm-trace-layer">
+                @for (s of o.segments; track $index) {
+                  <path class="nm-trace-under" [attr.d]="s.d" />
+                  <path [attr.class]="'nm-trace sev-' + s.sev" [attr.d]="s.d" />
+                }
+                @for (s of o.stops; track $index) {
+                  @let bw = 12 + s.label.length * 6.4;
+                  <g [attr.class]="'nm-badge sev-' + s.sev" [attr.transform]="'translate(' + s.badge.x + ',' + s.badge.y + ')'">
+                    <rect [attr.x]="-bw / 2" y="-9" [attr.width]="bw" height="18" rx="9" />
+                    <text text-anchor="middle" y="3.5">{{ s.label }}</text>
+                  </g>
+                }
+              </g>
+            }
           </g>
         </svg>
 
@@ -119,7 +148,10 @@ export class NetworkMapComponent {
   readonly graph = input<NetworkGraph | null>(null);
   /** Bring a node into view: picks the level and focus that draw it, selects it and centres on it. `seq` re-triggers the same id. */
   readonly reveal = input<{ id: string; seq: number } | null>(null);
+  /** A traced path to draw over the map: everything else is dimmed, the hops are numbered. null = normal view. */
+  readonly path = input<PathResult | null>(null);
   readonly selected = output<MapSelection | null>();
+  readonly clearPath = output<void>();
 
   protected readonly levels = LEVELS;
   protected readonly level = signal<Level>(1);
@@ -136,6 +168,7 @@ export class NetworkMapComponent {
   private drag?: { x: number; y: number; tx: number; ty: number };
   private suppressClick = false;
   private pendingReveal?: string;
+  private pendingPathFit = false;
 
   private readonly idx = computed(() => (this.graph() ? new GraphIndex(this.graph()!) : null));
   private readonly severity = computed(() => (this.idx() ? buildSeverity(this.idx()!) : null));
@@ -159,13 +192,37 @@ export class NetworkMapComponent {
     return [...idx.ancestors(f).reverse(), n].map(x => ({ id: x.id, name: x.name || x.nativeId }));
   });
 
-  private decorate(b: SceneBox) {
-    return { b, cls: boxClasses(b, this.selectedId()), t: `translate(${b.x},${b.y})`, href: iconHref(b.icon) };
+  protected readonly focusName = computed(() => {
+    const f = this.focusId();
+    const n = f ? this.idx()?.node(f) : undefined;
+    return n ? n.name || n.nativeId : '';
+  });
+
+  protected readonly overlay = computed(() => {
+    const p = this.path();
+    const idx = this.idx();
+    const scene = this.scene();
+    if (!p || !idx || !p.hops.length || !scene.boxes.length) return null;
+    return pathOverlay(idx, scene, p);
+  });
+
+  private decorate(b: SceneBox, keep: Set<string> | null) {
+    const cls = boxClasses(b, this.selectedId()) + (keep && !keep.has(b.id) ? ' nm-dim' : '');
+    return { b, cls, t: `translate(${b.x},${b.y})`, href: iconHref(b.icon) };
   }
 
-  protected readonly containers = computed(() => this.scene().boxes.filter(b => b.container).map(b => this.decorate(b)));
-  protected readonly leaves = computed(() => this.scene().boxes.filter(b => !b.container).map(b => this.decorate(b)));
-  protected readonly edges = computed(() => this.scene().edges.map(e => ({ e, cls: edgeClasses(e, this.selectedId()) })));
+  protected readonly containers = computed(() => {
+    const keep = this.overlay()?.keep ?? null;
+    return this.scene().boxes.filter(b => b.container).map(b => this.decorate(b, keep));
+  });
+  protected readonly leaves = computed(() => {
+    const keep = this.overlay()?.keep ?? null;
+    return this.scene().boxes.filter(b => !b.container).map(b => this.decorate(b, keep));
+  });
+  protected readonly edges = computed(() => {
+    const keep = this.overlay()?.keepEdges ?? null;
+    return this.scene().edges.map(e => ({ e, cls: edgeClasses(e, this.selectedId()) + (keep && !keep.has(e.id) ? ' nm-dim' : '') }));
+  });
   protected readonly transform = computed(() => `translate(${this.tx()},${this.ty()}) scale(${this.k()})`);
   protected readonly zoomPct = computed(() => Math.round(this.k() * 100));
 
@@ -185,7 +242,7 @@ export class NetworkMapComponent {
           if (run !== this.runId) return;
           this.scene.set(scene);
           this.busy.set(false);
-          setTimeout(() => (this.pendingReveal ? this.centreOn(this.pendingReveal) : this.fit()));
+          setTimeout(() => (this.pendingReveal ? this.centreOn(this.pendingReveal) : this.pendingPathFit ? this.fitPath() : this.fit()));
         },
         err => {
           if (run !== this.runId) return;
@@ -216,6 +273,41 @@ export class NetworkMapComponent {
       this.level.set(level);
     }
   });
+
+  /** A new path: switch to the unfocused level that draws most of its hops and fit to them. Clearing it refits. */
+  private pathEffect = effect(() => {
+    const p = this.path();
+    const idx = this.idx();
+    untracked(() => {
+      if (!idx) return;
+      if (!p || !p.hops.length) {
+        this.pendingPathFit = false;
+        if (this.scene().boxes.length) setTimeout(() => this.fit());
+        return;
+      }
+      const level = pathLevel(idx, p);
+      this.pendingPathFit = true;
+      if (level === this.level() && !this.focusId() && this.scene().boxes.length) setTimeout(() => this.fitPath());
+      else {
+        this.focusId.set(undefined);
+        this.level.set(level);
+      }
+    });
+  });
+
+  private fitPath(): void {
+    this.pendingPathFit = false;
+    const el = this.stage()?.nativeElement;
+    const b = this.overlay()?.bounds;
+    if (!el || !b) return this.fit();
+    const w = el.clientWidth;
+    const h = el.clientHeight;
+    const pad = 70;
+    const k = Math.max(0.15, Math.min(w / (b.w + pad * 2), h / (b.h + pad * 2), 1.2));
+    this.k.set(k);
+    this.tx.set(w / 2 - (b.x + b.w / 2) * k);
+    this.ty.set(h / 2 - (b.y + b.h / 2) * k);
+  }
 
   /** Select and centre the node, or — when this level folds it into something else — the nearest drawn ancestor or neighbour. */
   private centreOn(id: string): void {

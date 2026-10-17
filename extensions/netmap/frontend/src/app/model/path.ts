@@ -701,8 +701,10 @@ export function tracePath(idx: GraphIndex, q: PathQuery): PathResult {
 
 interface InTarget { node: GraphNode; eni: GraphNode; ip: string; subnet: GraphNode; network: GraphNode; sgs: GraphNode[]; dest: Dest }
 
+export interface InboundQuery { from: string; protocol?: Protocol; port?: number }
+
 /** Every entry point that can reach `q.from` (internet direct, public/internal LBs, hubs, peering, VGW VPN), one result each. */
-export function traceInbound(idx: GraphIndex, q: Omit<PathQuery, 'direction' | 'to'> & { direction?: 'inbound' }): PathResult[] {
+export function traceInbound(idx: GraphIndex, q: InboundQuery): PathResult[] {
   const node = idx.node(q.from);
   if (!node) return [];
   const t = traffic(q);
