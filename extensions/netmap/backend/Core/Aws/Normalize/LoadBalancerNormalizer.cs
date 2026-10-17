@@ -63,7 +63,7 @@ public static class LoadBalancerNormalizer
                         : lb.VpcId != null && eniByVpcIp.TryGetValue((lb.VpcId, tid), out var vpcEniId) ? vpcEniId
                         : eniByIp.TryGetValue(tid, out var eniId) ? eniId
                         : InterfacesNormalizer.EnsureCidr(b, tid + (tid.Contains(':') ? "/128" : "/32"));
-                    b.Edge(n.Id, EdgeKinds.Targets, to, $"{tg.TargetGroupArn}|{th.Target.Port}")
+                    b.Edge(n.Id, EdgeKinds.Targets, to, $"{tg.TargetGroupArn}|{tid}|{th.Target.Port}")
                         .Attr("targetGroup", tg.TargetGroupName).Attr("port", th.Target.Port ?? tg.Port)
                         .Attr("protocol", tg.Protocol?.Value).Attr("health", th.TargetHealth?.State?.Value)
                         // ip-mode target: workload collectors resolve it to the pod / task holding this address

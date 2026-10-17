@@ -12,6 +12,9 @@ public static class Sanitizer
     {
         "CustomerGatewayConfiguration", "PreSharedKey", "SecretAccessKey", "SessionToken", "PrivateKey",
         "AuthKey", "SharedKey", "Password",
+        // v2b workload collectors store no raw for pods / tasks / functions; these are the safety net should one ever
+        // be added: Lambda environment variables, ECS container secrets and env, Kubernetes env / secret refs, tokens.
+        "Environment", "Env", "EnvFrom", "Variables", "Secrets", "SecretOptions", "Token", "BearerToken",
     };
 
     public static JsonObject Sanitize(JsonObject obj)

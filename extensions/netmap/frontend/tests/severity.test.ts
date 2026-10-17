@@ -15,7 +15,8 @@ describe('severity', () => {
     expect(ctx.nodeSev.get(egress.id)).toBe('bad');
     expect(ctx.nodeSev.get('aws:-:global:account:111111111111')).toBe('bad');
     expect(ctx.nodeSev.get(idx.byName('vpn-connection', 'Site E 2')!.id)).toBe('warn');
-    expect(ctx.nodeSev.has(idx.byName('network', 'prod-ue1')!.id)).toBe(false);
+    // prod-ue1 carries the v2b workload warnings (public LB service, namespaces without NetworkPolicy, task public IP)
+    expect(ctx.nodeSev.get(idx.byName('network', 'prod-ue1')!.id)).toBe('warn');
   });
 
   it('finds the egress chokepoint', () => {

@@ -58,6 +58,14 @@ internal static class SyntheticHub
         var netWithTransit = net with { Priors = new[] { parts[$"{Collectors.Transit.Id}|{NetScope}|{Region}"] } };
         parts[$"{Collectors.Vpn.Id}|{NetScope}|{Region}"] = VpnNormalizer.Normalize(netWithTransit, NetVpn());
 
+        // v2b workloads: each workload collector sees the scope's earlier parts, as ScanEngine.PriorsFor gives them
+        GraphPart[] Priors(string scope) => parts.Where(kv => kv.Key.Contains($"|{scope}|", StringComparison.Ordinal)).Select(kv => kv.Value).ToArray();
+        parts[$"{Collectors.Interfaces.Id}|{ProdScope}|{Region}"] = InterfacesNormalizer.Normalize(prod, SyntheticWorkloads.ProdInterfaces());
+        parts[$"{Collectors.LoadBalancers.Id}|{ProdScope}|{Region}"] = LoadBalancerNormalizer.Normalize(prod with { Priors = Priors(ProdScope) }, SyntheticWorkloads.ProdLoadBalancers());
+        parts[$"{Collectors.Eks.Id}|{ProdScope}|{Region}"] = EksNormalizer.Normalize(prod with { Priors = Priors(ProdScope) }, SyntheticWorkloads.ProdEks());
+        parts[$"{Collectors.Ecs.Id}|{ProdScope}|{Region}"] = EcsNormalizer.Normalize(prod with { Priors = Priors(ProdScope) }, SyntheticWorkloads.ProdEcs());
+        parts[$"{Collectors.Lambda.Id}|{NetScope}|{Region}"] = LambdaNormalizer.Normalize(net with { Priors = Priors(NetScope) }, SyntheticWorkloads.NetLambda());
+
         var units = ScanPlanner.Plan(Members, Collectors.All);
         foreach (var u in units)
         {
@@ -95,9 +103,11 @@ internal static class SyntheticHub
         PrefixLists: new());
 
     private static InterfacesData NetInterfaces() => new(
-        Interfaces: new() { new NetworkInterface { NetworkInterfaceId = "eni-bastion", SubnetId = "subnet-egress-pub-1a", VpcId = "vpc-egress",
-            PrivateIpAddress = "10.100.101.20", Attachment = new NetworkInterfaceAttachment { InstanceId = "i-bastion" }, Groups = new() { new GroupIdentifier { GroupId = "sg-bastion" } } } },
-        SecurityGroups: new() { new SecurityGroup { GroupId = "sg-bastion", GroupName = "bastion", VpcId = "vpc-egress" } },
+        Interfaces: new List<NetworkInterface> { new NetworkInterface { NetworkInterfaceId = "eni-bastion", SubnetId = "subnet-egress-pub-1a", VpcId = "vpc-egress",
+            PrivateIpAddress = "10.100.101.20", Attachment = new NetworkInterfaceAttachment { InstanceId = "i-bastion" }, Groups = new() { new GroupIdentifier { GroupId = "sg-bastion" } } } }
+            .Concat(SyntheticWorkloads.NetLambdaInterfaces()).ToList(),
+        SecurityGroups: new() { new SecurityGroup { GroupId = "sg-bastion", GroupName = "bastion", VpcId = "vpc-egress" },
+            new SecurityGroup { GroupId = "sg-lambda", GroupName = "lambda", VpcId = "vpc-egress" } },
         Rules: new() { new SecurityGroupRule { SecurityGroupRuleId = "sgr-ssh", GroupId = "sg-bastion", IsEgress = false, IpProtocol = "tcp", FromPort = 22, ToPort = 22, CidrIpv4 = "0.0.0.0/0" } },
         Instances: new() { new Instance { InstanceId = "i-bastion", Tags = Name("bastion-1") } });
 

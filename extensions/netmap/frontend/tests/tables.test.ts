@@ -44,7 +44,7 @@ describe('tables on the synthetic hub', () => {
   });
 
   it('findings and inventory', () => {
-    expect(findingRows(idx).map(f => f.ruleId).sort()).toEqual(['NET-001', 'NET-003']);
+    expect(findingRows(idx).map(f => f.ruleId).sort()).toEqual(['NET-001', 'NET-002', 'NET-003', 'ecs-task-public-ip', 'k8s-namespace-no-networkpolicy', 'k8s-namespace-no-networkpolicy', 'k8s-service-public-lb', 'lambda-no-egress']);
     // every finding carries a resource the map can reveal
     for (const f of findingRows(idx)) expect(idx.node(f.nodeId)).toBeTruthy();
     const inv = inventoryRows(idx);
