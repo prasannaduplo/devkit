@@ -218,9 +218,9 @@ public class NetworkBlueprintService : ResourceServiceBase<NetworkBlueprint, Net
         return snaps.OrderByDescending(s => s.Spec.Sequence).Select(s => ToHeader(s, activeId)).ToList();
     }
 
-    /// <summary>Decompressed graph JSON for a snapshot of this blueprint ("latest" = the blueprint's latest),
-    /// following SameAsSnapshotId for unchanged scans. Null when not found.</summary>
-    public async Task<string?> GetGraphJsonAsync(NetworkBlueprint bp, string snapshotId, CancellationToken ct)
+    /// <summary>Decoded graph for a snapshot of this blueprint ("latest" = the blueprint's latest), following
+    /// SameAsSnapshotId for unchanged scans. A fresh copy per call (callers may mutate it). Null when not found.</summary>
+    public async Task<NetworkGraph?> GetGraphAsync(NetworkBlueprint bp, string snapshotId, CancellationToken ct)
     {
         var id = snapshotId == "latest" ? bp.Result?.LatestSnapshotId : snapshotId;
         if (id == null) return null;
@@ -229,7 +229,7 @@ public class NetworkBlueprintService : ResourceServiceBase<NetworkBlueprint, Net
         var snap = await repo.GetByIdAsync(id, ct);
         if (snap?.Spec?.BlueprintId != bp.Id) return null;
         if (snap.Result?.Graph == null && snap.Result?.SameAsSnapshotId is { } same) snap = await repo.GetByIdAsync(same, ct);
-        return snap?.Result?.Graph is { } bytes ? GraphCodec.ToJson(GraphCodec.Decode<NetworkGraph>(bytes)) : null;
+        return snap?.Result?.Graph is { } bytes ? GraphCodec.Decode<NetworkGraph>(bytes) : null;
     }
 
     // A Running snapshot that is not the blueprint's active scan was orphaned (crash / failed save): report it as abandoned.
