@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { GraphNode, NetworkGraph } from '../src/app/model/api-types';
 import { GraphIndex } from '../src/app/model/graph-index';
 import {
-  dnsData, egressRows, filterInventory, findingRows, flowLogRows, hubRows, inventoryRows, peeringRows, toCsv, vpnRows,
+  dnsData, egressRows, filterInventory, findingRows, flowLogRows, hubRows, inventoryRows, peeringRows, toCsv, vpnRows, workloadsData,
 } from '../src/app/model/tables';
 import { hubFixture } from './fixture';
 
@@ -89,5 +89,25 @@ describe('tables on hand-made graphs', () => {
   it('CSV quotes commas, quotes and newlines', () => {
     const csv = toCsv([{ a: 'x,y', b: 'say "hi"', c: 'line1\nline2', d: 'plain' }]);
     expect(csv).toBe('a,b,c,d\n"x,y","say ""hi""","line1\nline2",plain\n');
+  });
+});
+
+describe('workloads tab', () => {
+  it('clusters, namespaces, services, ECS services and Lambda functions from the synthetic hub', () => {
+    const d = workloadsData(idx);
+    expect(d.clusters.map(c => [c.name, c.access, c.pods])).toEqual([['apps-eks', 'readable', 21], ['legacy-eks', 'not-readable', 0]]);
+    expect(d.clusters[1].detail).toContain('access entry');
+    const batch = d.namespaces.find(n => n.name === 'batch')!;
+    expect(batch.pods).toBe(14);
+    expect(batch.severity).toBe('warn');
+    expect(d.namespaces.find(n => n.name === 'web')!.policies).toBe(1);
+    const api = d.services.find(s => s.name === 'api')!;
+    expect(api.scheme).toBe('internet-facing');
+    expect(api.loadBalancer).toBe('api-nlb');
+    expect(api.severity).toBe('warn');
+    expect(d.services.find(s => s.name === 'frontend')!.pods).toBe(3);
+    expect(d.ecsServices).toEqual([expect.objectContaining({ name: 'orders', running: '2/2', loadBalancer: 'web-alb', publicIps: '198.51.100.77', severity: 'warn' })]);
+    expect(d.lambdas.map(l => [l.name, l.severity, l.interfaces])).toEqual([['audit-export', 'ok', 1], ['nightly-report', 'warn', 1]]);
+    for (const rows of [d.clusters, d.namespaces, d.services, d.ecsServices, d.lambdas]) for (const r of rows) expect(idx.node(r.id)).toBeTruthy();
   });
 });

@@ -22,8 +22,8 @@ export type MapSelection =
 const LEVELS: { level: Level; label: string; hint: string }[] = [
   { level: 1, label: 'L1', hint: 'Very high — accounts, networks, hubs, outside world' },
   { level: 2, label: 'L2', hint: 'High — gateways, VPNs, NAT / IGW' },
-  { level: 3, label: 'L3', hint: 'Mid — subnets, route tables, load balancers, endpoints' },
-  { level: 4, label: 'L4', hint: 'Low — interfaces, workloads, security groups (one network)' },
+  { level: 3, label: 'L3', hint: 'Mid — subnets, route tables, load balancers, endpoints, namespaces, services, Lambda' },
+  { level: 4, label: 'L4', hint: 'Low — interfaces, workloads, pods, tasks, security groups (one network)' },
 ];
 
 @Component({
@@ -296,7 +296,8 @@ export class NetworkMapComponent {
     const network = n.kind === 'network' ? n : idx.ancestorOfKind(n.id, 'network');
     let level: Level = (lv >= 1 && lv <= 4 ? lv : 3) as Level;
     if (level === 4 && !network) level = 3;
-    const focus = level === 1 ? undefined : network?.id;
+    // a pod is drawn on its own only inside its namespace (busy namespaces fold pods per owner)
+    const focus = level === 1 ? undefined : n.kind === 'pod' ? idx.ancestorOfKind(n.id, 'k8s-namespace')?.id ?? network?.id : network?.id;
     this.pendingReveal = r.id;
     if (level === this.level() && focus === this.focusId() && this.scene().boxes.length) {
       setTimeout(() => this.centreOn(r.id));
@@ -403,6 +404,12 @@ export class NetworkMapComponent {
   /** Double-click opens a container (or a network/hub card) one level deeper, scoped to it. */
   protected drill(ev: Event, b: SceneBox): void {
     ev.stopPropagation();
+    if (b.id.startsWith('agg:pods:')) {
+      // expand: focus the namespace, whose pods are then drawn one by one
+      const ns = this.view()?.nodes.find(n => n.id === b.id)?.parentId;
+      if (ns) { this.focusId.set(ns); this.level.set(4); }
+      return;
+    }
     if (b.boundary || b.id.startsWith('agg:')) return;
     if (!b.container && !['network', 'hub', 'account', 'subnet', 'vpn-connection'].includes(b.kind)) return;
     this.focusId.set(b.id);

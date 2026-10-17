@@ -12,7 +12,7 @@ import { kindInfo } from '../model/kinds';
 import { outsideMember, scopeForAccount, specWithMember } from '../model/outside';
 import { PathResult, Verdict, traceInbound, tracePath, inboundHints } from '../model/path';
 import { memberKey } from '../model/picker';
-import { dnsData, egressRows, findingRows, flowLogRows, hubRows, inventoryRows, peeringRows, vpnRows } from '../model/tables';
+import { dnsData, egressRows, findingRows, flowLogRows, hubRows, inventoryRows, peeringRows, vpnRows, workloadsData } from '../model/tables';
 import { MapSelection, NetworkMapComponent } from '../map/network-map.component';
 import { NetworkBlueprintService } from '../network-blueprint.service';
 import { IconSpriteComponent } from '../shared/icon-sprite.component';
@@ -21,12 +21,12 @@ import { StatusBadgeComponent } from '../shared/status-badge.component';
 import { InventoryTabComponent } from './inventory-tab.component';
 import { TraceBarComponent, TraceRequest } from './trace-bar.component';
 
-type Tab = 'map' | 'inventory' | 'egress' | 'vpn' | 'transit' | 'peering' | 'dns' | 'flowlogs' | 'findings' | 'snapshots';
+type Tab = 'map' | 'inventory' | 'egress' | 'vpn' | 'transit' | 'peering' | 'dns' | 'flowlogs' | 'workloads' | 'findings' | 'snapshots';
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'map', label: 'Map' }, { id: 'inventory', label: 'Inventory' }, { id: 'egress', label: 'Egress' },
   { id: 'vpn', label: 'S2S VPN' }, { id: 'transit', label: 'Transit' }, { id: 'peering', label: 'Peering' },
-  { id: 'dns', label: 'DNS' }, { id: 'flowlogs', label: 'Flow logs' }, { id: 'findings', label: 'Findings' },
+  { id: 'dns', label: 'DNS' }, { id: 'flowlogs', label: 'Flow logs' }, { id: 'workloads', label: 'Workloads' }, { id: 'findings', label: 'Findings' },
   { id: 'snapshots', label: 'Snapshots' },
 ];
 
@@ -35,6 +35,7 @@ const CAPS: { key: string; label: string; tab: Tab }[] = [
   { key: 'transit', label: 'Transit', tab: 'transit' }, { key: 'peering', label: 'Peering', tab: 'peering' },
   { key: 'inspection', label: 'Inspection', tab: 'map' }, { key: 'dns', label: 'DNS', tab: 'dns' },
   { key: 'flowLogs', label: 'Flow logs', tab: 'flowlogs' }, { key: 'dnsQueryLogs', label: 'DNS query logs', tab: 'dns' },
+  { key: 'workloads', label: 'Workloads', tab: 'workloads' },
 ];
 
 const COLS: Record<string, NmColumn[]> = {
@@ -64,6 +65,27 @@ const COLS: Record<string, NmColumn[]> = {
   rules: [{ key: 'name', label: 'Resolver rule' }, { key: 'domain', label: 'Domain', mono: true }, { key: 'targets', label: 'Forwards to', mono: true }, { key: 'networks', label: 'Networks' }],
   endpoints: [{ key: 'name', label: 'Resolver endpoint' }, { key: 'direction', label: 'Direction' }, { key: 'network', label: 'Network' }],
   flowlogs: [{ key: 'network', label: 'Network' }, { key: 'coverage', label: 'Coverage', badge: true }, { key: 'destinations', label: 'Destinations', mono: true }],
+  clusters: [
+    { key: 'name', label: 'Cluster' }, { key: 'type', label: 'Type' }, { key: 'network', label: 'Network' }, { key: 'version', label: 'Version', mono: true },
+    { key: 'access', label: 'Access', badge: true }, { key: 'namespaces', label: 'Namespaces' }, { key: 'pods', label: 'Pods' }, { key: 'services', label: 'Services' },
+    { key: 'detail', label: 'Detail' },
+  ],
+  namespaces: [
+    { key: 'cluster', label: 'Cluster' }, { key: 'name', label: 'Namespace' }, { key: 'pods', label: 'Pods' }, { key: 'services', label: 'Services' },
+    { key: 'ingresses', label: 'Ingresses' }, { key: 'policies', label: 'Network policies' }, { key: 'severity', label: '', badge: true },
+  ],
+  k8sServices: [
+    { key: 'cluster', label: 'Cluster' }, { key: 'namespace', label: 'Namespace' }, { key: 'name', label: 'Service' }, { key: 'type', label: 'Type' },
+    { key: 'scheme', label: 'Scheme' }, { key: 'ports', label: 'Ports', mono: true }, { key: 'pods', label: 'Pods' }, { key: 'loadBalancer', label: 'Load balancer' },
+  ],
+  ecsServices: [
+    { key: 'cluster', label: 'Cluster' }, { key: 'name', label: 'Service' }, { key: 'running', label: 'Running' }, { key: 'launchType', label: 'Launch type' },
+    { key: 'loadBalancer', label: 'Load balancer' }, { key: 'publicIps', label: 'Public IPs', mono: true }, { key: 'network', label: 'Network' },
+  ],
+  lambdas: [
+    { key: 'name', label: 'Function' }, { key: 'network', label: 'Network' }, { key: 'runtime', label: 'Runtime', mono: true }, { key: 'subnets', label: 'Subnets' },
+    { key: 'egress', label: 'Subnet egress' }, { key: 'interfaces', label: 'Interfaces' }, { key: 'severity', label: '', badge: true },
+  ],
   findings: [{ key: 'severity', label: 'Severity', badge: true }, { key: 'ruleId', label: 'Rule', mono: true }, { key: 'message', label: 'Finding' }, { key: 'resources', label: 'Resources' }],
   snapshots: [
     { key: 'seq', label: '#' }, { key: 'trigger', label: 'Trigger' }, { key: 'scanStatus', label: 'Status', badge: true },
@@ -96,7 +118,7 @@ const COLS: Record<string, NmColumn[]> = {
     .nm-step.current { color: #096570; border-color: #0d8f9e; font-weight: 700; animation: nm-pulse 1.2s ease-in-out infinite; }
     @keyframes nm-pulse { 50% { background: #d5eef1; } }
     @media (prefers-reduced-motion: reduce) { .nm-progress .bar > div, .nm-step.current { animation: none; } }
-    .nm-caps { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 6px; margin: 12px 0; }
+    .nm-caps { display: grid; grid-template-columns: repeat(9, minmax(0, 1fr)); gap: 6px; margin: 12px 0; }
     @media (max-width: 1100px) { .nm-caps { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
     .nm-cap { border: 1px solid #ebe9f1; border-radius: 8px; padding: 6px 8px; cursor: pointer; background: #fff; min-width: 0; }
     .nm-cap .r { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -266,6 +288,19 @@ const COLS: Record<string, NmColumn[]> = {
                 <nm-table [columns]="cols['endpoints']" [rows]="dns().endpoints" [clickable]="true" empty="No resolver endpoints." (rowClick)="selectNode($event)" />
               }
               @case ('flowlogs') { <nm-table [columns]="cols['flowlogs']" [rows]="flowLogs()" [clickable]="true" empty="No member networks collected." (rowClick)="selectNode($event)" /> }
+              @case ('workloads') {
+                @let wd = workloads();
+                <div class="nm-sec-h">Kubernetes clusters</div>
+                <nm-table [columns]="cols['clusters']" [rows]="wd.clusters" [clickable]="true" empty="No EKS clusters in these networks." (rowClick)="selectNode($event)" />
+                <div class="nm-sec-h">Namespaces</div>
+                <nm-table [columns]="cols['namespaces']" [rows]="wd.namespaces" [clickable]="true" empty="No namespaces read." (rowClick)="selectNode($event)" />
+                <div class="nm-sec-h">Kubernetes services</div>
+                <nm-table [columns]="cols['k8sServices']" [rows]="wd.services" [clickable]="true" empty="No services read." (rowClick)="selectNode($event)" />
+                <div class="nm-sec-h">ECS services</div>
+                <nm-table [columns]="cols['ecsServices']" [rows]="wd.ecsServices" [clickable]="true" empty="No ECS services in these networks." (rowClick)="selectNode($event)" />
+                <div class="nm-sec-h">Lambda functions (VPC)</div>
+                <nm-table [columns]="cols['lambdas']" [rows]="wd.lambdas" [clickable]="true" empty="No VPC Lambda functions in these networks." (rowClick)="selectNode($event)" />
+              }
               @case ('findings') { <nm-table [columns]="cols['findings']" [rows]="findings()" [clickable]="true" empty="No findings." (rowClick)="selectNode({ id: $event['nodeId'] })" /> }
               @case ('snapshots') {
                 <nm-table [columns]="cols['snapshots']" [rows]="snapshotRows()" [clickable]="true" empty="No snapshots yet." (rowClick)="selectedSnapshot.set($event['id'])" />
@@ -536,6 +571,7 @@ export class BlueprintDetailComponent implements OnInit {
   protected readonly dns = computed(() => (this.idx() ? dnsData(this.idx()!) : { zones: [], rules: [], endpoints: [] }));
   protected readonly flowLogs = computed(() => (this.idx() ? flowLogRows(this.idx()!) : []));
   protected readonly findings = computed(() => (this.idx() ? findingRows(this.idx()!) : []));
+  protected readonly workloads = computed(() => (this.idx() ? workloadsData(this.idx()!) : { clusters: [], namespaces: [], services: [], ecsServices: [], lambdas: [] }));
 
   protected readonly snapshotRows = computed(() => this.snapshots().map(s => ({
     id: s.id,
@@ -563,10 +599,15 @@ export class BlueprintDetailComponent implements OnInit {
     const idx = this.idx();
     if (!sel || !idx) return null;
     if (sel.kind === 'aggregate') {
-      return { title: sel.label, sub: 'Site-to-site VPN connections', nodeId: '', rows: [] as [string, string][], tags: [] as [string, string][], attrs: [] as [string, string][], list: sel.memberIds.map(id => idx.node(id)?.name ?? id), raw: '', sections: [] as ReturnType<typeof nodeDetails>, related: [] as ReturnType<typeof relatedResources>, line: '' };
+      const pods = sel.id.startsWith('agg:pods:');
+      // pods folded per owner: list them navigable; double-click the box (or pick one) to expand the namespace
+      const related = pods ? [{ title: `Pods (${sel.memberIds.length})`, more: 0, items: sel.memberIds.map(id => idx.node(id)).filter(n => !!n)
+        .map(n => ({ nodeId: n!.id, label: n!.name, sub: [String(n!.attrs?.['podIp'] ?? ''), String(n!.attrs?.['phase'] ?? '')].filter(Boolean).join(' · ') })) }] : [];
+      return { title: sel.label, sub: pods ? 'Pods of one owner — double-click the box to expand the namespace' : 'Site-to-site VPN connections', nodeId: '', rows: [] as [string, string][], tags: [] as [string, string][], attrs: [] as [string, string][],
+        list: pods ? [] : sel.memberIds.map(id => idx.node(id)?.name ?? id), raw: '', sections: [] as ReturnType<typeof nodeDetails>, related: related as ReturnType<typeof relatedResources>, line: '' };
     }
     if (sel.kind === 'edge') {
-      const name = (id: string) => idx.node(id)?.name ?? id.replace(/^agg:vpn-sites:/, 'VPN sites → ');
+      const name = (id: string) => idx.node(id)?.name ?? id.replace(/^agg:vpn-sites:/, 'VPN sites → ').replace(/^agg:pods:.*\|[^/]*\//, 'pods of ');
       const underlying = sel.edgeIds.slice(0, 25).map(eid => idx.graph.edges.find(e => e.id === eid)).filter(Boolean);
       return {
         title: `${name(sel.from)} → ${name(sel.to)}`,
@@ -828,7 +869,8 @@ const OUTCOME_TEXT: Record<PathResult['outcome'], string> = {
 const COLLECTOR_LABEL: Record<string, string> = {
   'aws.core-network': 'VPCs, subnets & routes', 'aws.interfaces': 'Interfaces & workloads', 'aws.load-balancers': 'Load balancers',
   'aws.endpoints': 'VPC endpoints', 'aws.transit': 'Transit gateways', 'aws.vpn': 'Site-to-site VPN', 'aws.peering': 'Peering',
-  'aws.dns-resolver': 'DNS resolver', 'aws.flow-logs': 'Flow logs', 'aws.dns-zones': 'Route 53 zones',
+  'aws.dns-resolver': 'DNS resolver', 'aws.flow-logs': 'Flow logs', 'aws.eks': 'EKS / Kubernetes', 'aws.ecs': 'ECS', 'aws.lambda': 'Lambda',
+  'aws.dns-zones': 'Route 53 zones',
 };
 const COLLECTOR_ORDER: Record<string, number> = Object.fromEntries(Object.keys(COLLECTOR_LABEL).map((k, i) => [k, i]));
 

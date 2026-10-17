@@ -20,10 +20,12 @@ const LIMIT = 50;
 const OUT: Record<string, string> = {
   uses: 'Security groups', associated: 'Associated with', attaches: 'Attached', peers: 'Peers with',
   'tunnels-to': 'Tunnels to', 'exits-via': 'Exits via',
+  'runs-on': 'Runs on', selects: 'Selects pods', backs: 'Served by', exposes: 'Exposes', runs: 'Runs tasks', 'placed-in': 'Placed in',
 };
 const IN: Record<string, string> = {
   uses: 'Used by', associated: 'Associated', attaches: 'Attached to', peers: 'Peers with',
   'tunnels-to': 'Tunnels from', 'exits-via': 'Exit for', 'routes-to': 'Route tables pointing here',
+  'runs-on': 'Workloads running here', selects: 'Selected by', backs: 'Fronted by', exposes: 'Exposed by', runs: 'Run by service',
 };
 
 /** An interface is rarely what the user is looking for — name what owns it (instance, load balancer, NAT…). */

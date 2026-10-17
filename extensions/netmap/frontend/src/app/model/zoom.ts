@@ -1,5 +1,5 @@
 import { GraphNode, Visibility } from './api-types';
-import { GraphIndex, num, str } from './graph-index';
+import { GraphIndex, num, str, strs } from './graph-index';
 import { kindInfo } from './kinds';
 
 export type Level = 1 | 2 | 3 | 4;
@@ -34,6 +34,9 @@ export interface ViewModel {
   edges: ViewEdge[];
 }
 
+/** A namespace with more pods than this shows them per owner at L4 ("frontend ×14"). */
+export const POD_AGGREGATE_THRESHOLD = 12;
+
 /** Which nodes/edges a zoom level (optionally scoped to one container) draws. See Task 4 rules. */
 export function computeView(idx: GraphIndex, level: Level, focusId?: string): ViewModel {
   const focus = focusId ? idx.node(focusId) : undefined;
@@ -49,6 +52,34 @@ export function computeView(idx: GraphIndex, level: Level, focusId?: string): Vi
 
   const visible = new Set<string>();
   for (const n of idx.graph.nodes) if (shownKind(n.kind) && inScope(n)) visible.add(n.id);
+
+  // Busy namespaces fold their pods into one box per owner (Deployment / StatefulSet / DaemonSet …) at L4, unless
+  // the namespace itself (or one of its pods) is the focus — drilling into the namespace expands them.
+  const podToAggregate = new Map<string, string>();
+  const podAggregates: ViewNode[] = [];
+  if (level === 4) {
+    for (const ns of idx.ofKind('k8s-namespace')) {
+      if (!visible.has(ns.id) || (focus && (focus.id === ns.id || idx.isAncestor(ns.id, focus.id)))) continue;
+      const pods = idx.children(ns.id).filter(c => c.kind === 'pod' && visible.has(c.id));
+      if (pods.length <= POD_AGGREGATE_THRESHOLD) continue;
+      const groups = new Map<string, GraphNode[]>();
+      for (const p of pods) {
+        const key = `${str(p.attrs?.['ownerKind']) ?? 'Pod'}/${str(p.attrs?.['ownerName']) ?? p.name}`;
+        groups.set(key, [...(groups.get(key) ?? []), p]);
+      }
+      for (const [key, members] of groups) {
+        if (members.length < 2) continue;
+        const aggId = `agg:pods:${ns.id}|${key}`;
+        const [ownerKind, ownerName] = [key.slice(0, key.indexOf('/')), key.slice(key.indexOf('/') + 1)];
+        const degraded = members.filter(m => (str(m.attrs?.['phase']) ?? 'Running') !== 'Running').length;
+        podAggregates.push({
+          id: aggId, kind: 'pod', label: `${ownerName} ×${members.length}`, sublabel: degraded ? `${ownerKind} · ${degraded} not running` : ownerKind,
+          parentId: ns.id, container: false, visibility: 'full', aggregate: { count: members.length, degraded, memberIds: members.map(m => m.id) },
+        });
+        for (const m of members) { visible.delete(m.id); podToAggregate.set(m.id, aggId); }
+      }
+    }
+  }
 
   const repCache = new Map<string, string | null>();
   const rep = (id: string): string | null => {
@@ -129,13 +160,13 @@ export function computeView(idx: GraphIndex, level: Level, focusId?: string): Vi
 
   for (const e of idx.graph.edges) {
     if (focus && !inScope(idx.node(e.from)) && !inScope(idx.node(e.to))) continue;
-    const from = vpnToAggregate.get(e.from) ?? endpoint(e.from);
-    const to = vpnToAggregate.get(e.to) ?? endpoint(e.to);
+    const from = vpnToAggregate.get(e.from) ?? podToAggregate.get(e.from) ?? endpoint(e.from);
+    const to = vpnToAggregate.get(e.to) ?? podToAggregate.get(e.to) ?? endpoint(e.to);
     add(from, to, e.kind, e.id);
   }
 
   for (const b of boundary.values()) nodes.push({ ...toViewNode(b, undefined), boundary: true });
-  nodes.push(...aggregates.values());
+  nodes.push(...aggregates.values(), ...podAggregates);
 
   return { level, focusId, needsFocus: false, nodes, edges: [...edgesByKey.values()] };
 }
@@ -186,6 +217,16 @@ export function sublabel(n: GraphNode): string | undefined {
     case 'account': return a['inScope'] === false ? 'not in blueprint scopes' : undefined;
     case 'network-interface': return str(a['privateIp']);
     case 'workload': return str(a['workloadType']);
+    case 'k8s-cluster': return a['readable'] === false ? 'not readable' : [str(a['clusterType'])?.toUpperCase(), str(a['version'])].filter(Boolean).join(' ') || undefined;
+    case 'k8s-namespace': return typeof a['podCount'] === 'number' ? `${a['podCount']} pod${a['podCount'] === 1 ? '' : 's'}` : undefined;
+    case 'pod': return str(a['podIp']) ?? str(a['phase']);
+    case 'k8s-service': return [str(a['serviceType']), str(a['scheme'])].filter(Boolean).join(' · ') || undefined;
+    case 'ingress': return str(a['ingressClass']) ?? str(a['scheme']);
+    case 'network-policy': return strs(a['policyTypes']).join(' + ') || undefined;
+    case 'ecs-cluster': return typeof a['taskCount'] === 'number' ? `${a['taskCount']} task${a['taskCount'] === 1 ? '' : 's'}` : undefined;
+    case 'ecs-service': return typeof a['runningCount'] === 'number' ? `${a['runningCount']}/${num(a['desiredCount']) ?? '?'} running` : undefined;
+    case 'ecs-task': return str(a['privateIp']) ?? str(a['lastStatus']);
+    case 'lambda-function': return str(a['runtime']);
     default: return undefined;
   }
 }

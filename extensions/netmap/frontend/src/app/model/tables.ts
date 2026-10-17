@@ -235,3 +235,81 @@ export function toCsv(rows: Record<string, unknown>[]): string {
   };
   return [keys.join(','), ...rows.map(r => keys.map(k => cell(r[k])).join(','))].join('\n') + '\n';
 }
+
+// ---- workloads (v2b) -------------------------------------------------------------------------------------------
+
+export interface ClusterRow { id: string; name: string; type: string; network: string; version: string; access: string; namespaces: number; pods: number; services: number; detail: string; severity: Sev }
+export interface NamespaceRow { id: string; cluster: string; name: string; pods: number; services: number; ingresses: number; policies: number; severity: Sev }
+export interface K8sServiceRow { id: string; cluster: string; namespace: string; name: string; type: string; scheme: string; ports: string; pods: number; loadBalancer: string; severity: Sev }
+export interface EcsServiceRow { id: string; cluster: string; name: string; running: string; launchType: string; loadBalancer: string; publicIps: string; network: string; severity: Sev }
+export interface LambdaRow { id: string; name: string; network: string; runtime: string; subnets: string; egress: string; interfaces: number; severity: Sev }
+
+export interface WorkloadsData {
+  clusters: ClusterRow[]; namespaces: NamespaceRow[]; services: K8sServiceRow[]; ecsServices: EcsServiceRow[]; lambdas: LambdaRow[];
+}
+
+const LAMBDA_INTERNET = new Set(['via-nat', 'via-hub', 'via-inspection', 'via-appliance', 'via-private-nat', 'via-vpn', 'via-peering', 'via-hub-partial']);
+
+export function workloadsData(idx: GraphIndex): WorkloadsData {
+  const kids = (id: string, kind: string) => idx.children(id).filter(c => c.kind === kind);
+  const netName = (n: GraphNode) => idx.ancestorOfKind(n.id, 'network')?.name ?? '';
+  const lbNames = (n: GraphNode) => idx.out(n.id, 'backs').map(e => idx.node(e.to)).filter(x => x?.kind === 'load-balancer').map(x => x!.name).join(', ');
+
+  const namespaces: NamespaceRow[] = idx.ofKind('k8s-namespace').map(ns => {
+    const pods = kids(ns.id, 'pod').length;
+    const policies = kids(ns.id, 'network-policy').length;
+    return {
+      id: ns.id, cluster: str(ns.attrs?.['cluster']) ?? idx.node(ns.parentId ?? '')?.name ?? '', name: ns.name, pods,
+      services: kids(ns.id, 'k8s-service').length, ingresses: kids(ns.id, 'ingress').length, policies,
+      severity: (pods > 0 && policies === 0 ? 'warn' : 'ok') as Sev,
+    };
+  }).sort((a, b) => a.cluster.localeCompare(b.cluster) || a.name.localeCompare(b.name));
+
+  const clusters: ClusterRow[] = idx.ofKind('k8s-cluster').map(c => {
+    const nss = kids(c.id, 'k8s-namespace');
+    const readable = c.attrs?.['readable'] !== false;
+    return {
+      id: c.id, name: c.name, type: (str(c.attrs?.['clusterType']) ?? 'k8s').toUpperCase(), network: netName(c), version: str(c.attrs?.['version']) ?? '',
+      access: readable ? 'readable' : 'not-readable', namespaces: nss.length,
+      pods: nss.reduce((n, ns) => n + kids(ns.id, 'pod').length, 0), services: nss.reduce((n, ns) => n + kids(ns.id, 'k8s-service').length, 0),
+      detail: readable ? (c.attrs?.['podsTruncated'] === true ? 'pods truncated at 3000' : '') : `needs ${str(c.attrs?.['unreadableReason']) ?? 'read access'}`,
+      severity: (readable ? 'ok' : 'warn') as Sev,
+    };
+  }).sort(byText(r => r.name));
+
+  const services: K8sServiceRow[] = idx.ofKind('k8s-service').map(s => {
+    const a = s.attrs ?? {};
+    const ports = (Array.isArray(a['ports']) ? (a['ports'] as { port?: number; protocol?: string }[]) : []).map(p => `${p.protocol ?? 'TCP'}/${p.port ?? '?'}`).join(', ');
+    const scheme = str(a['scheme']) ?? '';
+    return {
+      id: s.id, cluster: str(a['cluster']) ?? '', namespace: str(a['namespace']) ?? '', name: s.name, type: str(a['serviceType']) ?? '', scheme, ports,
+      pods: idx.out(s.id, 'selects').length, loadBalancer: lbNames(s) || strs(a['lbHostnames']).join(', '),
+      severity: (scheme === 'internet-facing' ? 'warn' : 'ok') as Sev,
+    };
+  }).sort((a, b) => a.cluster.localeCompare(b.cluster) || a.namespace.localeCompare(b.namespace) || a.name.localeCompare(b.name));
+
+  const ecsServices: EcsServiceRow[] = idx.ofKind('ecs-service').map(s => {
+    const tasks = idx.out(s.id, 'runs').map(e => idx.node(e.to)).filter((x): x is GraphNode => !!x);
+    const pubs = tasks.map(t => str(t.attrs?.['publicIp'])).filter((x): x is string => !!x);
+    return {
+      id: s.id, cluster: str(s.attrs?.['cluster']) ?? '', name: s.name,
+      running: `${num(s.attrs?.['runningCount']) ?? tasks.length}/${num(s.attrs?.['desiredCount']) ?? '?'}`,
+      launchType: str(s.attrs?.['launchType']) ?? '',
+      loadBalancer: idx.in(s.id, 'exposes').map(e => idx.node(e.from)?.name).filter(Boolean).join(', '),
+      publicIps: pubs.join(', '), network: netName(s), severity: (pubs.length ? 'warn' : 'ok') as Sev,
+    };
+  }).sort((a, b) => a.cluster.localeCompare(b.cluster) || a.name.localeCompare(b.name));
+
+  const lambdas: LambdaRow[] = idx.ofKind('lambda-function').map(f => {
+    const subnets = idx.out(f.id, 'placed-in').map(e => idx.node(e.to)).filter((x): x is GraphNode => x?.kind === 'subnet');
+    const classes = subnets.map(s => str(s.attrs?.['egress']) ?? 'unknown');
+    return {
+      id: f.id, name: f.name, network: netName(f), runtime: str(f.attrs?.['runtime']) ?? '', subnets: subnets.map(s => s.name).join(', '),
+      egress: [...new Set(classes.map(c => EGRESS_TEXT[c] ?? c))].join(' · '),
+      interfaces: idx.out(f.id, 'runs-on').length,
+      severity: (classes.some(c => !LAMBDA_INTERNET.has(c)) ? 'warn' : 'ok') as Sev,
+    };
+  }).sort(byText(r => r.name));
+
+  return { clusters, namespaces, services, ecsServices, lambdas };
+}

@@ -165,7 +165,7 @@ export function toScene(view: ViewModel, laid: ElkNode, ctx: SeverityContext): S
 }
 
 export function iconFor(v: ViewNode): string {
-  if (v.aggregate) return 'site';
+  if (v.aggregate) return v.kind === 'pod' ? 'pod' : 'site';
   if (v.kind === 'external' && str(v.source?.attrs?.['role']) === 'internet') return 'internet';
   return kindInfo(v.kind).icon;
 }
