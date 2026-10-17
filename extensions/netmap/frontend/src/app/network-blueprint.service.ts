@@ -1,9 +1,10 @@
 import { Injectable, inject } from '@angular/core';
-import { Observable } from 'rxjs';
-import { map } from 'rxjs/operators';
+import { Observable, from } from 'rxjs';
+import { catchError, map, switchMap } from 'rxjs/operators';
 import {
-  NetworkBlueprint, NetworkBlueprintSpec, NetworkGraph, PickerVpc, SnapshotHeader, WorkspaceScope,
+  Json, NetworkBlueprint, NetworkBlueprintSpec, NetworkGraph, PickerVpc, SnapshotHeader, WorkspaceScope,
 } from './model/api-types';
+import { decodeGraphBody, GRAPH_QUERY } from './model/graph-transfer';
 
 export const REMOTE_DuploHttpClient = 'REMOTE_DuploHttpClient';
 export const REMOTE_UserSession = 'REMOTE_UserSession';
@@ -81,8 +82,25 @@ export class NetworkBlueprintService {
     return this.http.get(`${this.base()}/${id}/snapshots`).pipe(map((r: any) => this.items(r) as SnapshotHeader[]));
   }
 
+  /**
+   * The snapshot graph, gzip-base64 encoded on the wire with raw kept only for the kinds the path engine reads
+   * (network ACLs, security groups); the side panel loads other nodes' raw via nodeRaw(). An older backend ignores
+   * the query and returns the plain graph, which decodeGraphBody passes through. If decoding fails (no
+   * DecompressionStream, corrupt body) the graph is re-requested as plain JSON.
+   */
   graph(id: string, snapshotId = 'latest'): Observable<NetworkGraph> {
-    return this.http.get(`${this.base()}/${id}/snapshots/${snapshotId}/graph`).pipe(map((r: any) => this.unwrap(r) as NetworkGraph));
+    const url = `${this.base()}/${id}/snapshots/${snapshotId}/graph`;
+    const plain = (): Observable<NetworkGraph> => this.http.get(`${url}?raw=routing`).pipe(map((r: any) => this.unwrap(r) as NetworkGraph));
+    // Only decode failures fall back; HTTP errors (404 etc.) propagate unchanged.
+    return this.http.get(`${url}?${GRAPH_QUERY}`).pipe(
+      switchMap((r: any) => from(decodeGraphBody(this.unwrap(r))).pipe(catchError(() => plain()))),
+    );
+  }
+
+  /** One node's sanitized raw JSON (null when the node has none). */
+  nodeRaw(id: string, snapshotId: string, nodeId: string): Observable<Record<string, Json> | null> {
+    const url = `${this.base()}/${id}/snapshots/${snapshotId}/nodes/raw?nodeId=${encodeURIComponent(nodeId)}`;
+    return this.http.get(url).pipe(map((r: any) => (this.unwrap(r)?.raw ?? null) as Record<string, Json> | null));
   }
 
   /** v0 single-region maps — only listed so they can be deleted. */

@@ -1,4 +1,4 @@
-import { Component, DestroyRef, LOCALE_ID, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, DestroyRef, LOCALE_ID, OnInit, computed, effect, inject, signal, untracked } from '@angular/core';
 import { formatDate } from '@angular/common';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -315,7 +315,11 @@ const COLS: Record<string, NmColumn[]> = {
               @if (p.tags.length) { <div class="nm-kv-h">Tags</div><div class="nm-kv">@for (r of p.tags; track r[0]) { <span class="k">{{ r[0] }}</span><span class="v">{{ r[1] }}</span> }</div> }
               @if (p.attrs.length) { <div class="nm-kv-h">Attributes</div><div class="nm-kv">@for (r of p.attrs; track r[0]) { <span class="k">{{ r[0] }}</span><span class="v">{{ r[1] }}</span> }</div> }
               @if (p.list.length) { <ul class="small pl-1">@for (l of p.list; track l) { <li>{{ l }}</li> }</ul> }
-              @if (p.raw) { <details><summary class="small">Raw (sanitized)</summary><pre>{{ p.raw }}</pre></details> }
+              @if (p.nodeId) {
+                <details [open]="rawOpen()" (toggle)="rawOpen.set($any($event.target).open)"><summary class="small">Raw (sanitized)</summary>
+                  @if (rawOpen()) { <pre>{{ rawText() }}</pre> }
+                </details>
+              }
             </aside>
           }
         </div>
@@ -336,6 +340,8 @@ export class BlueprintDetailComponent implements OnInit {
   private readonly id: string = this.route.snapshot.params['id'];
   private poll?: Subscription;
   private loadedSnapshotId: string | null = null;
+  /** The snapshot whose graph is on screen. */
+  private readonly shownSnapshot = signal<string | null>(null);
 
   protected readonly tabs = TABS;
   protected readonly cols = COLS;
@@ -524,6 +530,44 @@ export class BlueprintDetailComponent implements OnInit {
     return { title: n.name, sub: n.id, nodeId: n.id, rows, tags, attrs, list: [] as string[], raw: n.raw ? JSON.stringify(n.raw, null, 2) : '' };
   });
 
+  // --- lazy raw for the side panel ------------------------------------------------------------------------------
+  // The graph arrives with raw only for network ACLs and security groups (what the path engine reads); any other
+  // node's raw is fetched from the snapshot actually displayed when "Raw (sanitized)" is opened.
+  protected readonly rawOpen = signal(false);
+  private readonly rawCache = new Map<string, string>();
+  private readonly rawView = signal<{ key: string; loading: boolean; text: string } | null>(null);
+  protected readonly rawText = computed(() => {
+    const p = this.panel();
+    if (!p?.nodeId) return '';
+    if (p.raw) return p.raw;
+    const r = this.rawView();
+    return r && r.key === rawKey(this.shownSnapshot(), p.nodeId) && !r.loading ? r.text : 'Loading…';
+  });
+  private readonly rawLoader = effect(() => {
+    const p = this.panel();
+    const snap = this.shownSnapshot();
+    if (!this.rawOpen() || !p?.nodeId || p.raw || !snap) return;
+    untracked(() => this.loadRaw(snap, p.nodeId));
+  });
+
+  private loadRaw(snapshotId: string, nodeId: string): void {
+    const key = rawKey(snapshotId, nodeId);
+    const cached = this.rawCache.get(key);
+    if (cached !== undefined) { this.rawView.set({ key, loading: false, text: cached }); return; }
+    if (this.rawView()?.key === key) return;   // already loading (or failed: re-open the node to retry)
+    this.rawView.set({ key, loading: true, text: '' });
+    this.svc.nodeRaw(this.id, snapshotId, nodeId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: raw => {
+        const text = raw ? JSON.stringify(raw, null, 2) : 'No raw data was collected for this resource.';
+        this.rawCache.set(key, text);
+        if (this.rawView()?.key === key) this.rawView.set({ key, loading: false, text });
+      },
+      error: err => {
+        if (this.rawView()?.key === key) this.rawView.set({ key, loading: false, text: `Could not load: ${NetworkBlueprintService.errorMessage(err)}` });
+      },
+    });
+  }
+
   ngOnInit(): void {
     this.load();
     this.svc.scopes().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({ next: s => this.scopes.set(s ?? []), error: () => this.scopes.set([]) });
@@ -606,9 +650,14 @@ export class BlueprintDetailComponent implements OnInit {
   private loadGraph(snapshotId: string): void {
     this.loadedSnapshotId = snapshotId;
     this.graphError.set('');
-    this.svc.graph(this.id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: g => this.graph.set(g),
-      error: err => this.graphError.set(NetworkBlueprintService.errorMessage(err)),
+    // Request the snapshot by id (not "latest") so the lazy raw lookups hit the snapshot on screen.
+    this.svc.graph(this.id, snapshotId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: g => {
+        if (snapshotId !== this.loadedSnapshotId) return;   // a newer snapshot load superseded this one
+        this.graph.set(g);
+        this.shownSnapshot.set(snapshotId);
+      },
+      error: err => { if (snapshotId === this.loadedSnapshotId) this.graphError.set(NetworkBlueprintService.errorMessage(err)); },
     });
   }
 
@@ -704,4 +753,8 @@ function describeUnit(id: string): string {
   const [collector, , region] = id.split('|');
   const label = COLLECTOR_LABEL[collector] ?? collector;
   return region && region !== 'global' ? `${label.toLowerCase()} in ${region}` : label.toLowerCase();
+}
+
+function rawKey(snapshotId: string | null, nodeId: string): string {
+  return `${snapshotId ?? ''}|${nodeId}`;
 }
