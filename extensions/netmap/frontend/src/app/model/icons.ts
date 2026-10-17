@@ -33,6 +33,17 @@ export const ICON_PATHS: Record<string, string> = {
   cidr: '<path d="M3 5h10M3 11h10M6 2.5v11M10 2.5v11"/>',
   'flow-logs': '<path d="M2 12l3.5-4 3 2.5L14 4"/><path d="M11 4h3v3"/>',
   'dns-logs': '<rect x="2.5" y="2" width="11" height="12" rx="1.5"/><path d="M5 5.5h6M5 8h6M5 10.5h3.5"/>',
+  // workloads (v2b)
+  'k8s-cluster': '<path d="M8 1.6 13.8 4.4 15 10.6 11 15H5L1 10.6 2.2 4.4z"/><circle cx="8" cy="8.4" r="2.2"/><path d="M8 4.2v2M8 10.6v2M4.2 8.4h1.6M10.2 8.4h1.6"/>',
+  'k8s-namespace': '<rect x="2" y="2.5" width="12" height="11" rx="2" stroke-dasharray="2.2 1.4"/><path d="M5 6h6"/>',
+  'k8s-service': '<circle cx="8" cy="3.6" r="1.8"/><path d="M8 5.4v3M3.5 12.4 8 8.4l4.5 4"/><rect x="2" y="11.4" width="3" height="2.6" rx=".6"/><rect x="11" y="11.4" width="3" height="2.6" rx=".6"/>',
+  ingress: '<path d="M1.8 8h7M6.6 5.6 9 8l-2.4 2.4"/><path d="M10.5 2.5h2a1.5 1.5 0 0 1 1.5 1.5v8a1.5 1.5 0 0 1-1.5 1.5h-2"/>',
+  pod: '<rect x="3.5" y="3.5" width="9" height="9" rx="2"/><path d="M6 6.5h4M6 9.5h4"/>',
+  'network-policy': '<path d="M8 1.8 13.5 4v4c0 3.2-2.4 5.3-5.5 6.2C4.9 13.3 2.5 11.2 2.5 8V4z"/><path d="M5.6 8.2 7.3 9.8 10.6 6.4"/>',
+  'ecs-cluster': '<rect x="1.8" y="1.8" width="5.4" height="5.4" rx="1"/><rect x="8.8" y="1.8" width="5.4" height="5.4" rx="1"/><rect x="1.8" y="8.8" width="5.4" height="5.4" rx="1"/><rect x="8.8" y="8.8" width="5.4" height="5.4" rx="1"/>',
+  'ecs-service': '<rect x="2" y="4.5" width="8.5" height="8.5" rx="1.4"/><path d="M5 4.5V3h9v9h-3.5"/>',
+  'ecs-task': '<rect x="3" y="3" width="10" height="10" rx="1.4"/><path d="M3 6.5h10"/><circle cx="5.2" cy="4.8" r=".5"/>',
+  lambda: '<path d="M4 2.5h2.2L12 13.5M8.6 7.6 4.6 13.5"/><path d="M12 13.5h1.5"/>',
   generic: '<circle cx="8" cy="8" r="5.5"/><path d="M8 5.5v3"/><circle cx="8" cy="11" r=".6"/>',
 };
 

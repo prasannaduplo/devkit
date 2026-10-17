@@ -35,6 +35,16 @@ export const KINDS: KindInfo[] = [
   { kind: 'cidr-block', level: 4, icon: 'cidr', label: 'CIDR block', container: false },
   { kind: 'flow-log-config', level: 0, icon: 'flow-logs', label: 'Flow log', container: false },
   { kind: 'dns-query-log-config', level: 0, icon: 'dns-logs', label: 'DNS query log', container: false },
+  { kind: 'k8s-cluster', level: 2, icon: 'k8s-cluster', label: 'Kubernetes cluster', container: true },
+  { kind: 'k8s-namespace', level: 3, icon: 'k8s-namespace', label: 'Namespace', container: true },
+  { kind: 'k8s-service', level: 3, icon: 'k8s-service', label: 'Kubernetes service', container: false },
+  { kind: 'ingress', level: 3, icon: 'ingress', label: 'Ingress', container: false },
+  { kind: 'pod', level: 4, icon: 'pod', label: 'Pod', container: false },
+  { kind: 'network-policy', level: 4, icon: 'network-policy', label: 'Network policy', container: false },
+  { kind: 'ecs-cluster', level: 2, icon: 'ecs-cluster', label: 'ECS cluster', container: true },
+  { kind: 'ecs-service', level: 3, icon: 'ecs-service', label: 'ECS service', container: false },
+  { kind: 'ecs-task', level: 4, icon: 'ecs-task', label: 'ECS task', container: false },
+  { kind: 'lambda-function', level: 3, icon: 'lambda', label: 'Lambda function', container: false },
 ];
 
 const BY_KIND = new Map(KINDS.map(k => [k.kind, k]));
