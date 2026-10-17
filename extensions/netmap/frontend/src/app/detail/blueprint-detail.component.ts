@@ -1,5 +1,6 @@
 import { Component, DestroyRef, LOCALE_ID, OnInit, computed, effect, inject, signal, untracked, viewChild } from '@angular/core';
 import { nodeDetails } from '../model/details';
+import { relatedResources } from '../model/related';
 import { formatDate } from '@angular/common';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -144,6 +145,18 @@ const COLS: Record<string, NmColumn[]> = {
     .nm-dt td { padding: 3px 4px; border-bottom: 1px solid #f3f2f7; font-family: ui-monospace, monospace; overflow-wrap: anywhere; vertical-align: top; }
     .nm-dt tr.go { cursor: pointer; } .nm-dt tr.go:hover td { background: rgba(13, 143, 158, .07); }
     .nm-dt tr.t-bad td { color: #b42318; } .nm-dt tr.t-warn td { color: #9a5b0c; } .nm-dt tr.t-muted td { color: #8a8797; }
+    .nm-line { font-size: .8rem; color: #4a5560; margin: -4px 0 8px; }
+    .nm-fold { margin: 4px 0; }
+    .nm-fold > summary { cursor: pointer; font-size: .8rem; font-weight: 600; color: #4a5560; list-style: none; padding: 3px 0; }
+    .nm-fold > summary::-webkit-details-marker { display: none; }
+    .nm-fold > summary::before { content: '›'; display: inline-block; width: 14px; transition: transform .15s; color: #8a8797; }
+    .nm-fold[open] > summary::before { transform: rotate(90deg); }
+    .nm-rel { list-style: none; padding: 0 0 0 14px; margin: 0 0 6px; }
+    .nm-rel li { display: flex; flex-direction: column; padding: 3px 6px; border-radius: 6px; cursor: pointer; }
+    .nm-rel li:hover { background: rgba(13, 143, 158, .07); }
+    .nm-rel .l { font-size: .8rem; color: #0d8f9e; font-weight: 600; overflow-wrap: anywhere; }
+    .nm-rel .s { font-size: .72rem; color: #8a8797; overflow-wrap: anywhere; }
+    .nm-rel li.more { cursor: default; font-size: .74rem; color: #8a8797; }
     .nm-search-row { display: flex; gap: 8px; align-items: flex-start; }
     .nm-search-row nm-trace-bar { flex: 1 1 auto; min-width: 0; }
   `],
@@ -322,7 +335,7 @@ const COLS: Record<string, NmColumn[]> = {
               <h4>{{ p.title }}</h4>
               <div class="sub">{{ p.sub }}</div>
               @if (p.nodeId) { <div class="act"><button type="button" class="btn btn-sm btn-outline-primary" (click)="traceFrom(p.nodeId)">Trace path</button></div> }
-              @if (p.rows.length) { <div class="nm-kv">@for (r of p.rows; track r[0]) { <span class="k">{{ r[0] }}</span><span class="v">{{ r[1] }}</span> }</div> }
+              @if (p.line) { <div class="nm-line">{{ p.line }}</div> }
               @for (sec of p.sections; track sec.title) {
                 <div class="nm-kv-h">{{ sec.title }}</div>
                 @if (sec.rows.length) {
@@ -338,11 +351,32 @@ const COLS: Record<string, NmColumn[]> = {
                   </table>
                 } @else { <div class="small text-muted mb-50">{{ sec.empty ?? 'None.' }}</div> }
               }
-              @if (p.tags.length) { <div class="nm-kv-h">Tags</div><div class="nm-kv">@for (r of p.tags; track r[0]) { <span class="k">{{ r[0] }}</span><span class="v">{{ r[1] }}</span> }</div> }
-              @if (p.attrs.length) { <div class="nm-kv-h">Attributes</div><div class="nm-kv">@for (r of p.attrs; track r[0]) { <span class="k">{{ r[0] }}</span><span class="v">{{ r[1] }}</span> }</div> }
+              @if (p.related.length) {
+                <div class="nm-kv-h">Associated resources</div>
+                @for (g of p.related; track g.title) {
+                  <details class="nm-fold" [open]="g.items.length <= 8">
+                    <summary>{{ g.title }}</summary>
+                    <ul class="nm-rel">
+                      @for (it of g.items; track it.nodeId) {
+                        <li (click)="openRelated(it.nodeId)" title="Select and show on the map"><span class="l">{{ it.label }}</span><span class="s">{{ it.sub }}</span></li>
+                      }
+                      @if (g.more) { <li class="more">+{{ g.more }} more — see the Inventory tab</li> }
+                    </ul>
+                  </details>
+                }
+              }
               @if (p.list.length) { <ul class="small pl-1">@for (l of p.list; track l) { <li>{{ l }}</li> }</ul> }
+              @if (p.rows.length) {
+                <details class="nm-fold"><summary>Details</summary><div class="nm-kv">@for (r of p.rows; track r[0]) { <span class="k">{{ r[0] }}</span><span class="v">{{ r[1] }}</span> }</div></details>
+              }
+              @if (p.tags.length) {
+                <details class="nm-fold"><summary>Tags ({{ p.tags.length }})</summary><div class="nm-kv">@for (r of p.tags; track r[0]) { <span class="k">{{ r[0] }}</span><span class="v">{{ r[1] }}</span> }</div></details>
+              }
+              @if (p.attrs.length) {
+                <details class="nm-fold"><summary>Attributes ({{ p.attrs.length }})</summary><div class="nm-kv">@for (r of p.attrs; track r[0]) { <span class="k">{{ r[0] }}</span><span class="v">{{ r[1] }}</span> }</div></details>
+              }
               @if (p.nodeId) {
-                <details [open]="rawOpen()" (toggle)="rawOpen.set($any($event.target).open)"><summary class="small">Raw (sanitized)</summary>
+                <details class="nm-fold" [open]="rawOpen()" (toggle)="rawOpen.set($any($event.target).open)"><summary>Raw (sanitized)</summary>
                   @if (rawOpen()) { <pre>{{ rawText() }}</pre> }
                 </details>
               }
@@ -529,7 +563,7 @@ export class BlueprintDetailComponent implements OnInit {
     const idx = this.idx();
     if (!sel || !idx) return null;
     if (sel.kind === 'aggregate') {
-      return { title: sel.label, sub: 'Site-to-site VPN connections', nodeId: '', rows: [] as [string, string][], tags: [] as [string, string][], attrs: [] as [string, string][], list: sel.memberIds.map(id => idx.node(id)?.name ?? id), raw: '', sections: [] as ReturnType<typeof nodeDetails> };
+      return { title: sel.label, sub: 'Site-to-site VPN connections', nodeId: '', rows: [] as [string, string][], tags: [] as [string, string][], attrs: [] as [string, string][], list: sel.memberIds.map(id => idx.node(id)?.name ?? id), raw: '', sections: [] as ReturnType<typeof nodeDetails>, related: [] as ReturnType<typeof relatedResources>, line: '' };
     }
     if (sel.kind === 'edge') {
       const name = (id: string) => idx.node(id)?.name ?? id.replace(/^agg:vpn-sites:/, 'VPN sites → ');
@@ -544,6 +578,8 @@ export class BlueprintDetailComponent implements OnInit {
         list: underlying.map(e => `${e!.kind}: ${idx.node(e!.from)?.name ?? e!.from} → ${idx.node(e!.to)?.name ?? e!.to}${e!.attrs && Object.keys(e!.attrs).length ? ` (${Object.entries(e!.attrs).map(([k, v]) => `${k}=${typeof v === 'object' ? JSON.stringify(v) : v}`).join(', ')})` : ''}`),
         raw: '',
         sections: [] as ReturnType<typeof nodeDetails>,
+        related: [] as ReturnType<typeof relatedResources>,
+        line: '',
       };
     }
     const n = idx.node(sel.id);
@@ -554,7 +590,8 @@ export class BlueprintDetailComponent implements OnInit {
     ];
     const tags = Object.entries(n.tags ?? {}).map(([k, v]) => [k, v] as [string, string]);
     const attrs = Object.entries(n.attrs ?? {}).map(([k, v]) => [k, typeof v === 'object' ? JSON.stringify(v) : String(v)] as [string, string]);
-    return { title: n.name, sub: n.id, nodeId: n.id, rows, tags, attrs, list: [] as string[], raw: n.raw ? JSON.stringify(n.raw, null, 2) : '', sections: nodeDetails(idx, n) };
+    return { title: n.name, sub: n.id, nodeId: n.id, rows, tags, attrs, list: [] as string[], raw: n.raw ? JSON.stringify(n.raw, null, 2) : '', sections: nodeDetails(idx, n), related: relatedResources(idx, n),
+      line: [kindInfo(n.kind).label, n.state, n.region, n.visibility !== 'full' ? n.visibility : ''].filter(Boolean).join(' · ') };
   });
 
   // --- lazy raw for the side panel ------------------------------------------------------------------------------
@@ -634,6 +671,13 @@ export class BlueprintDetailComponent implements OnInit {
   protected clearTrace(): void {
     this.traceReq.set(null);
     this.outsideScope.set('');
+  }
+
+  /** Navigate the panel: select the related resource and bring it into view on the map. */
+  protected openRelated(id: string): void {
+    if (!this.idx()?.node(id)) return;
+    this.selection.set({ kind: 'node', id });
+    this.revealHop(id);
   }
 
   protected revealHop(id: string): void {
