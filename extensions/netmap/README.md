@@ -31,7 +31,8 @@ Base: `/v1/aiservicedesk/user/data/workspaces/{ws}/environment/extensions/networ
 | GET | `picker/regions?scopeId=` | Regions for a scope |
 | GET | `picker/vpcs?scopeId=&region=` | VPCs for the picker |
 | GET | `{id}/snapshots` | Snapshot headers with per-unit status |
-| GET | `{id}/snapshots/{snapshotId\|latest}/graph` | The normalized graph (an `unchanged` snapshot follows `sameAsSnapshotId`) |
+| GET | `{id}/snapshots/{snapshotId\|latest}/graph?raw=&encoding=` | The normalized graph (an `unchanged` snapshot follows `sameAsSnapshotId`). `raw=all` (default) \| `routing` (raw only on network ACLs and security groups, what path tracing reads) \| `none`. `encoding=json` (default) \| `gzip64` → `{ encoding: "gzip-base64", data }` (the platform proxy does not compress). The UI sends `raw=routing&encoding=gzip64` |
+| GET | `{id}/snapshots/{snapshotId\|latest}/nodes/raw?nodeId=` | `{ nodeId, raw }` for one node (404 if absent); the side panel's Raw section loads it on demand |
 
 Snapshots are hidden resources: they cannot be deprovisioned directly through the API, only with their blueprint.
 
