@@ -35,7 +35,7 @@ const LEVELS: { level: Level; label: string; hint: string }[] = [
     .nm-levels button.active { background: var(--nm-surface); color: var(--nm-accent); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
     .nm-levels button:disabled { opacity: .4; cursor: not-allowed; }
     .nm-zoom span { font-size: 11px; padding: 4px 6px; color: var(--nm-faint); font-variant-numeric: tabular-nums; }
-    .nm-crumbs { font-size: 12px; color: var(--nm-faint); flex: 1 1 auto; }
+    .nm-crumbs { font-size: 13px; color: var(--nm-faint); flex: 1 1 auto; }
     .nm-crumbs a { color: var(--nm-accent); cursor: pointer; }
     .nm-crumbs span { margin: 0 6px; }
     .nm-stage { position: relative; height: 620px; cursor: grab; touch-action: none; }
@@ -86,7 +86,7 @@ const LEVELS: { level: Level; label: string; hint: string }[] = [
         }
         @if (error()) { <div class="nm-hint text-danger">Layout failed: {{ error() }}</div> }
 
-        <svg class="nm-canvas" (click)="clearSelection()">
+        <svg class="nm-canvas" [class.nm-calm]="calm()" [class.nm-moving]="moving()" (click)="clearSelection()">
           <g [attr.transform]="transform()">
             @for (x of containers(); track x.b.id) {
               <g [attr.class]="x.cls" [attr.transform]="x.t" (click)="pickBox($event, x.b)" (dblclick)="drill($event, x.b)">
@@ -165,6 +165,12 @@ export class NetworkMapComponent {
   private readonly tx = signal(0);
   private readonly ty = signal(0);
   private runId = 0;
+  /** Laid-out scenes by level|focus for the current graph: revisiting a level is instant. */
+  private sceneCache = new Map<string, Scene>();
+  private cacheFor?: unknown;
+  protected readonly moving = signal(false);
+  private movingTimer?: ReturnType<typeof setTimeout>;
+  protected readonly calm = computed(() => this.scene().edges.length > 40);
   private drag?: { x: number; y: number; tx: number; ty: number };
   private suppressClick = false;
   private pendingReveal?: string;
@@ -235,11 +241,18 @@ export class NetworkMapComponent {
         return;
       }
       const run = ++this.runId;
-      this.busy.set(true);
+      if (this.cacheFor !== ctx) {
+        this.sceneCache.clear();
+        this.cacheFor = ctx;
+      }
+      const key = `${view.level}|${view.focusId ?? ''}`;
+      const cached = this.sceneCache.get(key);
+      this.busy.set(!cached);
       this.error.set('');
-      this.elk.layout(view, ctx).then(
+      (cached ? Promise.resolve(cached) : this.elk.layout(view, ctx)).then(
         scene => {
           if (run !== this.runId) return;
+          this.sceneCache.set(key, scene);
           this.scene.set(scene);
           this.busy.set(false);
           setTimeout(() => (this.pendingReveal ? this.centreOn(this.pendingReveal) : this.pendingPathFit ? this.fitPath() : this.fit()));
@@ -379,7 +392,14 @@ export class NetworkMapComponent {
     this.zoomAround(factor, w / 2, h / 2);
   }
 
+  private markMoving(): void {
+    this.moving.set(true);
+    clearTimeout(this.movingTimer);
+    this.movingTimer = setTimeout(() => this.moving.set(false), 180);
+  }
+
   protected onWheel(ev: WheelEvent): void {
+    this.markMoving();
     ev.preventDefault();
     const rect = this.stage()!.nativeElement.getBoundingClientRect();
     this.zoomAround(ev.deltaY < 0 ? 1.1 : 0.9, ev.clientX - rect.left, ev.clientY - rect.top);

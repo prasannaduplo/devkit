@@ -19,9 +19,9 @@ export const MAP_CSS = `
 .nm-icon{color:var(--nm-accent);}
 .nm-box.choke>.nm-icon{color:var(--nm-choke);}
 .nm-box.sev-stub>.nm-icon,.nm-box.boundary>.nm-icon{color:var(--nm-stub);}
-.nm-label{font:600 11px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;fill:var(--nm-ink);}
+.nm-label{font:600 12px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;fill:var(--nm-ink);}
 .nm-box.choke>.nm-label{fill:var(--nm-choke);}
-.nm-sub{font:9.5px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;fill:var(--nm-faint);}
+.nm-sub{font:10.5px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;fill:var(--nm-faint);}
 .nm-flow{fill:none;stroke-width:1.8;stroke-dasharray:3 5;animation:nm-march 1.1s linear infinite;}
 .nm-flow.sev-ok{stroke:var(--nm-ok);}
 .nm-flow.sev-warn{stroke:var(--nm-warn);}
@@ -30,7 +30,7 @@ export const MAP_CSS = `
 .nm-flow.selected{stroke-width:3.2;}
 .nm-hit{fill:none;stroke:transparent;stroke-width:12;cursor:pointer;}
 .nm-count{font:600 9px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;fill:var(--nm-ink-soft);paint-order:stroke;stroke:var(--nm-bg);stroke-width:3px;}
-.nm-dim{opacity:.16;transition:opacity .2s;}
+.nm-dim{opacity:.16;}
 .nm-flow.nm-dim{animation:none;}
 .nm-trace-layer{pointer-events:none;}
 .nm-trace-under{fill:none;stroke:var(--nm-bg);stroke-width:7;stroke-linecap:round;opacity:.85;}
@@ -45,5 +45,10 @@ export const MAP_CSS = `
 .nm-badge text{font:700 10px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;fill:var(--nm-ink);}
 .nm-badge.sev-bad text{fill:#fff;}
 @keyframes nm-march{to{stroke-dashoffset:-16;}}
+/* busy views: only lines that need attention move (hundreds of animated SVG paths repaint the canvas every frame) */
+.nm-calm .nm-flow{animation:none;}
+.nm-calm .nm-flow.sev-bad,.nm-calm .nm-flow.sev-warn,.nm-calm .nm-flow.selected{animation:nm-march 1.1s linear infinite;}
+.nm-calm .nm-flow.nm-dim{animation:none;}
+.nm-moving .nm-flow,.nm-moving .nm-trace,.dragging .nm-flow,.dragging .nm-trace{animation-play-state:paused;}
 @media (prefers-reduced-motion: reduce){.nm-flow,.nm-trace{animation:none;}}
 `;
