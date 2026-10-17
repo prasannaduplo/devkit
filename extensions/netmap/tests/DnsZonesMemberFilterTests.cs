@@ -38,6 +38,11 @@ public class DnsZonesMemberFilterTests
         public Task<Amazon.NetworkFirewall.IAmazonNetworkFirewall> NetworkFirewall(CancellationToken ct) => No<Amazon.NetworkFirewall.IAmazonNetworkFirewall>();
         public Task<Amazon.Route53.IAmazonRoute53> Route53(CancellationToken ct) => No<Amazon.Route53.IAmazonRoute53>();
         public Task<Amazon.Route53Resolver.IAmazonRoute53Resolver> Resolver(CancellationToken ct) => No<Amazon.Route53Resolver.IAmazonRoute53Resolver>();
+        public Task<Amazon.EKS.IAmazonEKS> Eks(CancellationToken ct) => No<Amazon.EKS.IAmazonEKS>();
+        public Task<Amazon.ECS.IAmazonECS> Ecs(CancellationToken ct) => No<Amazon.ECS.IAmazonECS>();
+        public Task<Amazon.Lambda.IAmazonLambda> Lambda(CancellationToken ct) => No<Amazon.Lambda.IAmazonLambda>();
+        public Task<Amazon.SecurityToken.IAmazonSecurityTokenService> Sts(CancellationToken ct) => No<Amazon.SecurityToken.IAmazonSecurityTokenService>();
+        public Task<Amazon.Runtime.ImmutableCredentials> Credentials(CancellationToken ct) => No<Amazon.Runtime.ImmutableCredentials>();
         public void Dispose() { }
     }
 }

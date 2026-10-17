@@ -28,6 +28,8 @@
     <PackageReference Include="AWSSDK.Route53Resolver" Version="4.*" />
     <PackageReference Include="AWSSDK.EKS" Version="4.*" />
     <PackageReference Include="AWSSDK.SecurityToken" Version="4.*" />
+    <PackageReference Include="AWSSDK.ECS" Version="4.*" />
+    <PackageReference Include="AWSSDK.Lambda" Version="4.*" />
     <PackageReference Include="MongoDB.Bson" Version="3.5.0" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
     <PackageReference Include="xunit" Version="2.6.2" />

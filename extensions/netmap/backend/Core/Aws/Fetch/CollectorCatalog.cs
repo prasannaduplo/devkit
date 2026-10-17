@@ -6,7 +6,7 @@ public static class CollectorCatalog
     {
         new CoreNetworkCollector(), new InterfacesCollector(), new LoadBalancersCollector(), new EndpointsCollector(),
         new TransitCollector(), new VpnCollector(), new PeeringCollector(), new DnsResolverCollector(),
-        new FlowLogsCollector(), new DnsZonesCollector(),
+        new FlowLogsCollector(), new DnsZonesCollector(), new EksCollector(), new EcsCollector(), new LambdaCollector(),
     };
 
     public static ICollector Get(string id) =>
