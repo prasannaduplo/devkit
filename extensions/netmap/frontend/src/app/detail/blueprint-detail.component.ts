@@ -8,7 +8,7 @@ import { CapabilityState, NetworkBlueprint, NetworkGraph, SnapshotHeader, Worksp
 import { GraphIndex } from '../model/graph-index';
 import { kindInfo } from '../model/kinds';
 import { outsideMember, scopeForAccount, specWithMember } from '../model/outside';
-import { PathResult, Verdict, traceInbound, tracePath } from '../model/path';
+import { PathResult, Verdict, traceInbound, tracePath, inboundHints } from '../model/path';
 import { memberKey } from '../model/picker';
 import { dnsData, egressRows, findingRows, flowLogRows, hubRows, inventoryRows, peeringRows, vpnRows } from '../model/tables';
 import { MapSelection, NetworkMapComponent } from '../map/network-map.component';
@@ -299,6 +299,10 @@ const COLS: Record<string, NmColumn[]> = {
                 </ol>
               } @else {
                 <p class="small text-muted mt-1">No entry points into this resource were found in the graph — no public IP, load balancer, hub route, peering or VPN reaches it.</p>
+                @if (inboundWhy().length) {
+                  <div class="small font-weight-bold mt-50">Why</div>
+                  <ul class="small pl-1 mb-0">@for (w of inboundWhy(); track w) { <li>{{ w }}</li> }</ul>
+                }
               }
             </aside>
           } @else if (panel(); as p) {
@@ -398,6 +402,12 @@ export class BlueprintDetailComponent implements OnInit {
     const q = this.traceReq();
     if (!idx || !q) return [];
     return q.direction === 'inbound' ? traceInbound(idx, q) : [tracePath(idx, q)];
+  });
+  protected readonly inboundWhy = computed(() => {
+    const idx = this.idx();
+    const q = this.traceReq();
+    if (!idx || !q || q.direction !== 'inbound' || this.traceResults().length) return [];
+    return inboundHints(idx, q.from, q.protocol, q.port);
   });
   protected readonly activePath = computed(() => {
     const rs = this.traceResults();

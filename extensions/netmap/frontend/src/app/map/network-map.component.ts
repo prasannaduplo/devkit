@@ -271,6 +271,12 @@ export class NetworkMapComponent {
     const r = this.reveal();
     const idx = this.idx();
     if (!r || !idx) return;
+    // only a new reveal request (or graph) may move the map — reading level/focus/scene tracked here would
+    // re-apply this reveal on every later level or focus change and pin the map to it
+    untracked(() => this.applyReveal(r, idx));
+  });
+
+  private applyReveal(r: { id: string }, idx: GraphIndex): void {
     const n = idx.node(r.id);
     if (!n) return;
     const lv = kindInfo(n.kind).level;
@@ -285,7 +291,7 @@ export class NetworkMapComponent {
       this.focusId.set(focus);
       this.level.set(level);
     }
-  });
+  }
 
   /** A new path: switch to the unfocused level that draws most of its hops and fit to them. Clearing it refits. */
   private pathEffect = effect(() => {

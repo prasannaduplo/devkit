@@ -912,3 +912,31 @@ function inboundVgw(idx: GraphIndex, tg: InTarget, t: Traffic): PathResult[] {
   }
   return out;
 }
+
+/** When inbound finds no entry point: say why, so "nothing reaches it" is actionable (stopped instance, no public IP
+ * in a public subnet, security groups already open to the internet on the asked port). */
+export function inboundHints(idx: GraphIndex, nodeId: string, protocol = 'tcp', port = 443): string[] {
+  const n = idx.node(nodeId);
+  if (!n) return [];
+  const hints: string[] = [];
+  const state = (n.state ?? '').toLowerCase();
+  if (state === 'stopped' || state === 'stopping' || state === 'terminated')
+    hints.push(`${n.name} is ${state} — AWS releases an auto-assigned public IP while an instance is stopped, so nothing reaches it right now.`);
+  for (const eni of interfacesOf(idx, n).length ? interfacesOf(idx, n) : n.kind === 'network-interface' ? [n] : []) {
+    const subnet = idx.ancestorOfKind(eni.id, 'subnet');
+    const pub = publicIpOf(idx, eni);
+    if (!pub && subnet?.attrs?.['isPublic'] === true)
+      hints.push(`Its subnet ${subnet.name} routes to an internet gateway, but ${eni.name} has no public or Elastic IP — direct internet access needs one.`);
+    for (const sg of sgsOf(idx, eni)) {
+      const open = idx.in(sg.id, 'allows').some(e => {
+        if (str(e.attrs?.['direction']) !== 'ingress' || idx.node(e.from)?.kind !== 'external') return false;
+        const proto = str(e.attrs?.['protocol']) ?? 'all';
+        const from = num(e.attrs?.['fromPort']) ?? -1;
+        const to = num(e.attrs?.['toPort']) ?? -1;
+        return (proto === 'all' || proto === protocol) && (from < 0 || (port >= from && port <= to));
+      });
+      if (open) hints.push(`Security group ${sg.name} already allows ${protocol}/${port} from the internet — it becomes reachable as soon as it has a public IP.`);
+    }
+  }
+  return hints;
+}
