@@ -30,6 +30,7 @@ Base: `/v1/aiservicedesk/user/data/workspaces/{ws}/environment/extensions/networ
 | DELETE | `{id}` | Deletes the blueprint and its snapshots |
 | GET | `picker/regions?scopeId=` | Regions for a scope |
 | GET | `picker/vpcs?scopeId=&region=` | VPCs for the picker |
+| GET | `picker/k8s?scopeId=&region=` | **v2b spike, diagnostic.** Per EKS cluster in the region (max 20): version, status, endpoint host, public/private access + CIDRs, authenticationMode, the scope's callerArn (session name redacted), whether the API answers (`apiReachable`, `apiVersion`), whether the identity can list pods / services / networkpolicies cluster-wide, `httpStatus` and a short `message`. Never returns the token |
 | GET | `{id}/snapshots` | Snapshot headers with per-unit status |
 | GET | `{id}/snapshots/{snapshotId\|latest}/graph?raw=&encoding=` | The normalized graph (an `unchanged` snapshot follows `sameAsSnapshotId`). `raw=all` (default) \| `routing` (raw only on network ACLs and security groups, what path tracing reads) \| `none`. `encoding=json` (default) \| `gzip64` → `{ encoding: "gzip-base64", data }` (the platform proxy does not compress). The UI sends `raw=routing&encoding=gzip64` |
 | GET | `{id}/snapshots/{snapshotId\|latest}/nodes/raw?nodeId=` | `{ nodeId, raw }` for one node (404 if absent); the side panel's Raw section loads it on demand |
@@ -98,6 +99,27 @@ Snapshots are hidden resources: they cannot be deprovisioned directly through th
 
 A missing permission never fails the whole scan: that collector is marked `denied`, its capabilities show
 `not-readable` with the exact permission, and everything else still lands.
+
+### Kubernetes access (v2b spike)
+
+`picker/k8s` checks whether the backend can read Kubernetes in a scope's EKS clusters with the scope's existing AWS
+credentials (no new credential type). It builds the standard EKS bearer token (a SigV4-presigned
+`sts:GetCallerIdentity` URL bound to the cluster name, as `aws eks get-token` does), trusts only the cluster's own CA,
+and calls `GET /version` plus three `SelfSubjectAccessReview`s (`list` pods, services, networking.k8s.io
+networkpolicies, cluster-wide), 6 s per call. Nothing is created or changed in the cluster.
+
+Extra read-only IAM actions: `eks:ListClusters`, `eks:DescribeCluster`, `sts:GetCallerIdentity`.
+
+Cluster side, the scope's IAM role (the role in `callerArn`) must be mapped, read-only:
+
+- authenticationMode `API` / `API_AND_CONFIG_MAP`: an EKS access entry for the role with a read-only access policy
+  such as `AmazonEKSViewPolicy` (cluster scope), or
+- `CONFIG_MAP` / `API_AND_CONFIG_MAP`: an `aws-auth` mapping of the role to a group bound to the `view` ClusterRole.
+
+The API endpoint must also be reachable from the helpdesk backend (public endpoint with `publicAccessCidrs` allowing
+its egress IP, or a private network path). `message` explains the outcome: a timeout or connection failure means
+no network path (often a private-only endpoint); 401 means the identity is not mapped; 403 or `allowed: false` means
+it is mapped but lacks RBAC read; a TLS error means the server certificate did not validate against the cluster CA.
 
 ## Tests
 
