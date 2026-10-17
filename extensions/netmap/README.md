@@ -90,7 +90,11 @@ Snapshots are hidden resources: they cannot be deprovisioned directly through th
       "network-firewall:ListFirewalls", "network-firewall:DescribeFirewall",
       "route53:ListHostedZones", "route53:ListHostedZonesByVPC", "route53:ListResourceRecordSets",
       "route53resolver:ListResolverEndpoints", "route53resolver:ListResolverRules",
-      "route53resolver:ListResolverRuleAssociations", "route53resolver:ListResolverQueryLogConfigAssociations"
+      "route53resolver:ListResolverRuleAssociations", "route53resolver:ListResolverQueryLogConfigAssociations",
+      "eks:ListClusters", "eks:DescribeCluster", "sts:GetCallerIdentity",
+      "ecs:ListClusters", "ecs:DescribeClusters", "ecs:ListServices", "ecs:DescribeServices",
+      "ecs:ListTasks", "ecs:DescribeTasks",
+      "lambda:ListFunctions"
     ],
     "Resource": "*"
   }]
@@ -99,6 +103,41 @@ Snapshots are hidden resources: they cannot be deprovisioned directly through th
 
 A missing permission never fails the whole scan: that collector is marked `denied`, its capabilities show
 `not-readable` with the exact permission, and everything else still lands.
+
+### Workloads (v2b): EKS, ECS, Lambda
+
+Three regional collectors run after interfaces and load balancers, so they can link to the ENIs and LBs already
+collected (capability tile **Workloads**):
+
+- `aws.eks` — `eks:ListClusters` (at most 20 per region) + `eks:DescribeCluster`; only clusters whose VPC is a
+  member network. For each, read-only Kubernetes LIST calls with the EKS bearer token (below), TLS pinned to the
+  cluster CA, paginated 500 at a time: namespaces, pods (at most 3000 per cluster; truncation is reported as a
+  warning and on the cluster node), services, ingresses (`networking.k8s.io/v1`), networkpolicies and nodes.
+  **Never Secrets or ConfigMaps.** Stored per pod: name, namespace, labels (20, plus any a selector uses), pod IPs,
+  phase, node, owner (Deployment from its ReplicaSet), container names + images — no env, command, volumes or raw.
+  Services: type, ports, selector, cluster IP, LB hostnames; ingresses: class + rules; network policies: pod
+  selector, policy types, ingress/egress peers and ports; annotations only for ingress class and AWS LB scheme /
+  type. 35 s per cluster, no new cluster read starts after 45 s of the unit. A cluster the identity cannot read (401,
+  403, unreachable) stays on the map as "not readable" with what to grant; when no member cluster is readable the
+  unit ends `denied` with that text as its missing permission (e.g. `apps: EKS access entry for role X
+  (AmazonEKSViewPolicy)`). Ingresses, network policies and nodes are optional (403 → warning).
+- `aws.ecs` — `ecs:ListClusters/DescribeClusters`, `ListServices/DescribeServices` (batches of 10),
+  `ListTasks/DescribeTasks` (at most 2000 tasks per cluster); keeps awsvpc services / tasks whose subnet or ENI is in
+  a member network. Task definitions (env, secrets) are never read.
+- `aws.lambda` — `lambda:ListFunctions`; keeps VPC-attached functions in member networks (environment dropped
+  on receipt, nothing else stored but runtime, subnets, groups and state).
+
+Edges: pod / task / function `runs-on` its ENI (a pod: the node ENI holding its IP, else the EC2 node), service and
+network policy `selects` pods, ingress `backs` its services, service / ingress `backs` the load balancer named in
+`status.loadBalancer.ingress`, load balancer `exposes` pods and tasks (ip-mode targets) and ECS services (target
+group), ECS service `runs` tasks. Findings: `k8s-service-public-lb`, `k8s-namespace-no-networkpolicy`,
+`ecs-task-public-ip`, `lambda-no-egress`. The path tracer starts from or ends at pods, tasks, functions, services and
+ingresses, with a NetworkPolicy check for pods (only meaningful if the cluster runs a NetworkPolicy engine).
+
+Cluster side, for `aws.eks` to see anything the scope's IAM role needs read access in each cluster (same as the
+probe below): an EKS access entry with `AmazonEKSViewPolicy` (cluster scope) or an `aws-auth` mapping to a group
+bound to the `view` ClusterRole, and a network path from the helpdesk backend to the API endpoint. The `view` role
+does not cover nodes; without them pods whose IP is not on a collected ENI are not linked to their EC2 node.
 
 ### Kubernetes access (v2b spike)
 
