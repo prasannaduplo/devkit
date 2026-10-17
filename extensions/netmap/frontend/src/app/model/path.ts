@@ -419,7 +419,8 @@ class Walk {
   }
 }
 
-interface Source { range: Range | null; sgIds: string[]; isPublic: boolean; subnetId?: string }
+/** isPublic: the source has a public address (null = not known, e.g. tracing from a whole subnet). */
+interface Source { range: Range | null; sgIds: string[]; isPublic: boolean | null; subnetId?: string }
 
 /** Route out of a subnet: NACL outbound, then its route table. */
 function fromSubnet(w: Walk, subnet: GraphNode, src: Source): void {
@@ -451,8 +452,10 @@ function followTarget(w: Walk, targetId: string, network: GraphNode | undefined,
   switch (target.kind) {
     case 'internet-gateway': {
       if (!dest.isPublic) return w.end('blocked', { nodeId: target.id, verdict: 'block', title: `Internet gateway ${nameOf(target)}`, reason: `${destText(dest)} is a private address; an internet gateway does not route it.` });
-      if (!src.isPublic) return w.end('blocked', { nodeId: target.id, verdict: 'block', title: `Internet gateway ${nameOf(target)}`, reason: 'The source has no public IP address, so the internet gateway cannot translate it.' });
-      w.hop({ nodeId: target.id, verdict: 'allow', title: `Internet gateway ${nameOf(target)}`, reason: 'Forwards to the internet.' });
+      if (src.isPublic === false) return w.end('blocked', { nodeId: target.id, verdict: 'block', title: `Internet gateway ${nameOf(target)}`, reason: 'The source has no public IP address, so the internet gateway cannot translate it.' });
+      w.hop(src.isPublic === null
+        ? { nodeId: target.id, verdict: 'unknown', title: `Internet gateway ${nameOf(target)}`, reason: 'Forwards to the internet — only for sources with a public IP, which is not known when tracing from a subnet or network.' }
+        : { nodeId: target.id, verdict: 'allow', title: `Internet gateway ${nameOf(target)}`, reason: 'Forwards to the internet.' });
       return w.end('reaches', { nodeId: dest.nodeId && idx.node(dest.nodeId) ? dest.nodeId : INTERNET_ID, verdict: 'allow', title: `Reaches ${dest.label}`, reason: 'Destination reached.' });
     }
     case 'nat-gateway': {
@@ -684,7 +687,7 @@ export function tracePath(idx: GraphIndex, q: PathQuery): PathResult {
     const rt = mainRouteTable(idx, start);
     w.hop({ nodeId: start.id, verdict: 'unknown', title: 'Starting from a whole network', reason: 'No interface chosen: security groups and network ACLs are not evaluated; using the main route table.' });
     if (!rt) { w.end('unknown', { nodeId: start.id, verdict: 'unknown', title: 'No route table', reason: 'The network has no route table in the graph.' }); return w.result(); }
-    followTable(w, rt, start, { range: cidrRange(start.cidrs?.[0]), sgIds: [], isPublic: false });
+    followTable(w, rt, start, { range: cidrRange(start.cidrs?.[0]), sgIds: [], isPublic: null });
     return w.result();
   }
 
@@ -692,7 +695,7 @@ export function tracePath(idx: GraphIndex, q: PathQuery): PathResult {
   if (!subnet) { w.end('unknown', { nodeId: start.id, verdict: 'unknown', title: 'No interface or subnet', reason: `${nameOf(start)} has no interface or subnet in the graph to trace from.` }); return w.result(); }
   if (start.kind !== 'subnet') w.hop({ nodeId: subnet.id, verdict: 'info', title: `Subnet ${nameOf(subnet)}`, reason: 'No interface collected for this resource: tracing from its subnet.' });
   w.hop({ nodeId: subnet.id, verdict: 'unknown', title: 'Security groups not evaluated', reason: 'Tracing from a subnet: no interface, so no security group applies.' });
-  fromSubnet(w, subnet, { range: cidrRange(subnet.cidrs?.[0]), sgIds: [], isPublic: false, subnetId: subnet.id });
+  fromSubnet(w, subnet, { range: cidrRange(subnet.cidrs?.[0]), sgIds: [], isPublic: null, subnetId: subnet.id });
   return w.result();
 }
 

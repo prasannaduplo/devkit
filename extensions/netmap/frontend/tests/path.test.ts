@@ -166,6 +166,14 @@ describe('tracePath — hand-built networks', () => {
     expect(r.hops[r.hops.length - 1].reason).toMatch(/no public IP/);
   });
 
+  it('a public subnet as the start reaches the internet, flagged: its sources may lack a public IP', () => {
+    const idx = new GraphIndex(world().graph());
+    const r = tracePath(idx, { from: id('subnet', 'subnet-pub'), direction: 'outbound' });
+    expect(r.outcome).toBe('reaches');
+    expect(r.uncertain).toBe(true);
+    expect(r.hops.find(h => h.nodeId === id('internet-gateway', 'igw-a'))!.verdict).toBe('unknown');
+  });
+
   it('missing data gives unknown verdicts, never a crash', () => {
     const w = world();
     w.drop(e => e.to === id('nacl', 'acl-a'));
