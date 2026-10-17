@@ -109,6 +109,19 @@ export class TraceBarComponent {
     return n ? n.name || n.nativeId : '';
   });
 
+  /** Back to an empty search (used by the page's Clear button). */
+  reset(): void {
+    this.text.set('');
+    this.open.set(false);
+    this.cursor.set(0);
+    this.destText.set('');
+    this.destOpen.set(false);
+    this.destId.set(null);
+    this.protocol.set('tcp');
+    this.port.set(443);
+    this.source.set(null);
+  }
+
   protected val(ev: Event): string {
     return (ev.target as HTMLInputElement).value;
   }

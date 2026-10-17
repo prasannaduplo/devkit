@@ -363,6 +363,16 @@ export class NetworkMapComponent {
     this.level.set(l);
   }
 
+  /** Whole blueprint at L1, nothing selected, fitted (the page's Clear button). */
+  resetView(): void {
+    this.selectedId.set(undefined);
+    this.pendingReveal = undefined;
+    const wasHome = this.level() === 1 && !this.focusId();
+    this.focusId.set(undefined);
+    this.level.set(1);
+    if (wasHome) setTimeout(() => this.fit());
+  }
+
   protected setFocus(id: string | undefined): void {
     this.focusId.set(id);
     if (!id && this.level() === 4) this.level.set(3);

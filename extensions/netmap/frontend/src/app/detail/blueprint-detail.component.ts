@@ -1,4 +1,5 @@
-import { Component, DestroyRef, LOCALE_ID, OnInit, computed, effect, inject, signal, untracked } from '@angular/core';
+import { Component, DestroyRef, LOCALE_ID, OnInit, computed, effect, inject, signal, untracked, viewChild } from '@angular/core';
+import { nodeDetails } from '../model/details';
 import { formatDate } from '@angular/common';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -138,6 +139,13 @@ const COLS: Record<string, NmColumn[]> = {
     .nm-side pre { font-size: .72rem; background: #f6f7f9; border-radius: 6px; padding: 8px; max-height: 280px; overflow: auto; }
     .nm-side .x { float: right; cursor: pointer; color: #8a8797; }
     .nm-sec-h { font-weight: 700; font-size: .85rem; margin: 12px 0 6px; }
+    .nm-dt { width: 100%; border-collapse: collapse; font-size: .76rem; margin-bottom: 10px; table-layout: auto; }
+    .nm-dt th { text-align: left; color: #8a8797; font-weight: 600; padding: 3px 4px; border-bottom: 1px solid #ebe9f1; white-space: nowrap; }
+    .nm-dt td { padding: 3px 4px; border-bottom: 1px solid #f3f2f7; font-family: ui-monospace, monospace; overflow-wrap: anywhere; vertical-align: top; }
+    .nm-dt tr.go { cursor: pointer; } .nm-dt tr.go:hover td { background: rgba(13, 143, 158, .07); }
+    .nm-dt tr.t-bad td { color: #b42318; } .nm-dt tr.t-warn td { color: #9a5b0c; } .nm-dt tr.t-muted td { color: #8a8797; }
+    .nm-search-row { display: flex; gap: 8px; align-items: flex-start; }
+    .nm-search-row nm-trace-bar { flex: 1 1 auto; min-width: 0; }
   `],
   template: `
     <nm-icon-sprite />
@@ -225,7 +233,10 @@ const COLS: Record<string, NmColumn[]> = {
           <div class="nm-main">
             @switch (tab()) {
               @case ('map') {
-                <nm-trace-bar [index]="idx()" [(source)]="traceSource" (picked)="onPicked($event)" (trace)="runTrace($event)" />
+                <div class="nm-search-row">
+                  <nm-trace-bar [index]="idx()" [(source)]="traceSource" (picked)="onPicked($event)" (trace)="runTrace($event)" />
+                  <button type="button" class="btn btn-sm btn-outline-secondary" title="Clear search, trace, selection and focus — back to L1" (click)="clearAll()">Clear</button>
+                </div>
                 <nm-network-map [graph]="graph()" [reveal]="reveal()" [path]="activePath()" (selected)="selection.set($event)" (clearPath)="clearTrace()" />
               }
               @case ('inventory') { <nm-inventory-tab [rows]="inventory()" [fileName]="it.name + '-inventory'" (rowClick)="selectNode({ id: $event })" /> }
@@ -312,6 +323,21 @@ const COLS: Record<string, NmColumn[]> = {
               <div class="sub">{{ p.sub }}</div>
               @if (p.nodeId) { <div class="act"><button type="button" class="btn btn-sm btn-outline-primary" (click)="traceFrom(p.nodeId)">Trace path</button></div> }
               @if (p.rows.length) { <div class="nm-kv">@for (r of p.rows; track r[0]) { <span class="k">{{ r[0] }}</span><span class="v">{{ r[1] }}</span> }</div> }
+              @for (sec of p.sections; track sec.title) {
+                <div class="nm-kv-h">{{ sec.title }}</div>
+                @if (sec.rows.length) {
+                  <table class="nm-dt">
+                    <thead><tr>@for (c of sec.columns; track c) { <th>{{ c }}</th> }</tr></thead>
+                    <tbody>
+                      @for (r of sec.rows; track $index) {
+                        <tr [class]="'t-' + (r.tone ?? 'none')" [class.go]="!!r.nodeId" (click)="r.nodeId && revealHop(r.nodeId)" [title]="r.nodeId ? 'Show on the map' : ''">
+                          @for (c of r.cells; track $index) { <td>{{ c }}</td> }
+                        </tr>
+                      }
+                    </tbody>
+                  </table>
+                } @else { <div class="small text-muted mb-50">{{ sec.empty ?? 'None.' }}</div> }
+              }
               @if (p.tags.length) { <div class="nm-kv-h">Tags</div><div class="nm-kv">@for (r of p.tags; track r[0]) { <span class="k">{{ r[0] }}</span><span class="v">{{ r[1] }}</span> }</div> }
               @if (p.attrs.length) { <div class="nm-kv-h">Attributes</div><div class="nm-kv">@for (r of p.attrs; track r[0]) { <span class="k">{{ r[0] }}</span><span class="v">{{ r[1] }}</span> }</div> }
               @if (p.list.length) { <ul class="small pl-1">@for (l of p.list; track l) { <li>{{ l }}</li> }</ul> }
@@ -503,7 +529,7 @@ export class BlueprintDetailComponent implements OnInit {
     const idx = this.idx();
     if (!sel || !idx) return null;
     if (sel.kind === 'aggregate') {
-      return { title: sel.label, sub: 'Site-to-site VPN connections', nodeId: '', rows: [] as [string, string][], tags: [] as [string, string][], attrs: [] as [string, string][], list: sel.memberIds.map(id => idx.node(id)?.name ?? id), raw: '' };
+      return { title: sel.label, sub: 'Site-to-site VPN connections', nodeId: '', rows: [] as [string, string][], tags: [] as [string, string][], attrs: [] as [string, string][], list: sel.memberIds.map(id => idx.node(id)?.name ?? id), raw: '', sections: [] as ReturnType<typeof nodeDetails> };
     }
     if (sel.kind === 'edge') {
       const name = (id: string) => idx.node(id)?.name ?? id.replace(/^agg:vpn-sites:/, 'VPN sites → ');
@@ -517,6 +543,7 @@ export class BlueprintDetailComponent implements OnInit {
         attrs: [] as [string, string][],
         list: underlying.map(e => `${e!.kind}: ${idx.node(e!.from)?.name ?? e!.from} → ${idx.node(e!.to)?.name ?? e!.to}${e!.attrs && Object.keys(e!.attrs).length ? ` (${Object.entries(e!.attrs).map(([k, v]) => `${k}=${typeof v === 'object' ? JSON.stringify(v) : v}`).join(', ')})` : ''}`),
         raw: '',
+        sections: [] as ReturnType<typeof nodeDetails>,
       };
     }
     const n = idx.node(sel.id);
@@ -527,7 +554,7 @@ export class BlueprintDetailComponent implements OnInit {
     ];
     const tags = Object.entries(n.tags ?? {}).map(([k, v]) => [k, v] as [string, string]);
     const attrs = Object.entries(n.attrs ?? {}).map(([k, v]) => [k, typeof v === 'object' ? JSON.stringify(v) : String(v)] as [string, string]);
-    return { title: n.name, sub: n.id, nodeId: n.id, rows, tags, attrs, list: [] as string[], raw: n.raw ? JSON.stringify(n.raw, null, 2) : '' };
+    return { title: n.name, sub: n.id, nodeId: n.id, rows, tags, attrs, list: [] as string[], raw: n.raw ? JSON.stringify(n.raw, null, 2) : '', sections: nodeDetails(idx, n) };
   });
 
   // --- lazy raw for the side panel ------------------------------------------------------------------------------
@@ -589,6 +616,19 @@ export class BlueprintDetailComponent implements OnInit {
   /** The node panel's "Trace path": outbound to the internet on tcp/443; the bar then offers the other options. */
   protected traceFrom(id: string): void {
     this.runTrace({ from: id, direction: 'outbound', to: { kind: 'internet' }, protocol: 'tcp', port: 443 });
+  }
+
+  private readonly traceBar = viewChild(TraceBarComponent);
+  private readonly map = viewChild(NetworkMapComponent);
+
+  /** One click back to the starting view: no search, trace, selection or focus; whole blueprint at L1, fitted. */
+  protected clearAll(): void {
+    this.clearTrace();
+    this.traceSource.set(null);
+    this.selection.set(null);
+    this.reveal.set(null);
+    this.traceBar()?.reset();
+    this.map()?.resetView();
   }
 
   protected clearTrace(): void {
