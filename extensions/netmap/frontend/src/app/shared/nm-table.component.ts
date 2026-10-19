@@ -12,10 +12,11 @@ export interface NmColumn {
 @Component({
   selector: 'nm-table',
   styles: [`
-    .nm-table-wrap { overflow-x: auto; }
+    .nm-table-wrap { }
     .nm-table { width: 100%; font-size: .86rem; border-collapse: collapse; }
-    .nm-table th { font-weight: 600; color: #6e6b7b; padding: .5rem .75rem; border-bottom: 1px solid #ebe9f1; white-space: nowrap; cursor: pointer; user-select: none; }
+    .nm-table th { position: sticky; top: 0; z-index: 1; background: #fafafc; font-weight: 600; color: #6e6b7b; padding: .5rem .75rem; border-bottom: 1px solid #ebe9f1; white-space: nowrap; cursor: pointer; user-select: none; }
     .nm-table td { padding: .45rem .75rem; border-bottom: 1px solid #f3f2f7; vertical-align: top; }
+    .nm-table .cell { max-height: 3.9em; overflow: hidden; overflow-wrap: anywhere; }
     .nm-table tr.clickable { cursor: pointer; }
     .nm-table tr.clickable:hover td { background: rgba(13, 143, 158, .06); }
     .nm-table tr.row-bad td:first-child { box-shadow: inset 3px 0 0 #d6344c; }
@@ -52,7 +53,7 @@ export interface NmColumn {
                     @if (c.badge) {
                       <span class="nm-badge" [attr.data-v]="r[c.key]">{{ r[c.key] }}</span>
                     } @else {
-                      {{ r[c.key] }}
+                      <div class="cell" [title]="r[c.key] ?? ''">{{ r[c.key] }}</div>
                     }
                   </td>
                 }

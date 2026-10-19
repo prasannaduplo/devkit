@@ -45,7 +45,7 @@ const LEVELS: { level: Level; label: string; hint: string }[] = [
     .nm-crumbs { font-size: 13px; color: var(--nm-faint); flex: 1 1 auto; }
     .nm-crumbs a { color: var(--nm-accent); cursor: pointer; }
     .nm-crumbs span { margin: 0 6px; }
-    .nm-stage { position: relative; height: 620px; cursor: grab; touch-action: none; }
+    .nm-stage { position: relative; height: calc(100vh - 400px); min-height: 380px; cursor: grab; touch-action: none; }
     .nm-stage.dragging { cursor: grabbing; }
     .nm-hint { position: absolute; top: 16px; left: 16px; right: 16px; z-index: 2; background: var(--nm-surface); border: 1px solid var(--nm-line); border-radius: 8px; padding: 8px 12px; font-size: 12.5px; color: var(--nm-ink-soft); }
     .nm-legend { position: absolute; right: 12px; bottom: 12px; z-index: 2; background: var(--nm-surface); border: 1px solid var(--nm-line); border-radius: 10px; padding: 8px 12px; display: flex; gap: 10px 14px; flex-wrap: wrap; max-width: 520px; font: 11px ui-monospace, monospace; color: var(--nm-ink-soft); }

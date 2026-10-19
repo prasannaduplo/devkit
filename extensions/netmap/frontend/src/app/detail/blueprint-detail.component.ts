@@ -132,9 +132,10 @@ const COLS: Record<string, NmColumn[]> = {
     .nm-tabs button.active { color: #2563eb; border-bottom-color: #2563eb; }
     .nm-chip { display: inline-block; font-size: .72rem; background: #eef1f4; color: #4a5560; border-radius: 1rem; padding: .05rem .5rem; margin-right: .25rem; }
     .nm-banner { margin: 8px 0; }
-    .nm-body { display: flex; gap: 12px; align-items: flex-start; }
-    .nm-main { flex: 1 1 auto; min-width: 0; }
-    .nm-side { flex: 0 0 340px; max-height: 720px; overflow: auto; border: 1px solid #ebe9f1; border-radius: 10px; background: #fff; padding: 12px; }
+    .nm-body { display: flex; gap: 12px; align-items: stretch; height: calc(100vh - 300px); min-height: 460px; }
+    /* tab content and side panel scroll on their own; the page header, tiles and tabs stay put */
+    .nm-main { flex: 1 1 auto; min-width: 0; overflow: auto; overscroll-behavior: contain; }
+    .nm-side { flex: 0 0 340px; overflow: auto; overscroll-behavior: contain; border: 1px solid #ebe9f1; border-radius: 10px; background: #fff; padding: 12px; }
     .nm-side h4 { font-size: 1rem; margin: 0 0 2px; }
     .nm-side .sub { color: #8a8797; font-size: .8rem; margin-bottom: 10px; word-break: break-all; }
     .nm-kv { display: grid; grid-template-columns: minmax(90px, 38%) minmax(0, 1fr); gap: 4px 8px; font-size: .8rem; margin-bottom: 10px; }
