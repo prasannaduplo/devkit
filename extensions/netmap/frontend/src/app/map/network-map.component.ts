@@ -12,6 +12,7 @@ import { boxClasses, edgeClasses } from '../model/scene-svg';
 import { buildSeverity } from '../model/severity';
 import { Level, computeView } from '../model/zoom';
 import { kindInfo } from '../model/kinds';
+import { DEFAULT_LAYERS, LayerKey, Layers, layerOf } from '../model/layers';
 import { ElkLayoutService } from './elk-layout.service';
 
 export type MapSelection =
@@ -37,6 +38,10 @@ const LEVELS: { level: Level; label: string; hint: string }[] = [
     .nm-levels button.active { background: var(--nm-surface); color: var(--nm-accent); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
     .nm-levels button:disabled { opacity: .4; cursor: not-allowed; }
     .nm-zoom span { font-size: 11px; padding: 4px 6px; color: var(--nm-faint); font-variant-numeric: tabular-nums; }
+    .nm-layers { display: inline-flex; gap: 2px; background: var(--nm-surface-2); border-radius: 8px; padding: 2px; }
+    .nm-layers label { display: inline-flex; align-items: center; gap: 5px; margin: 0; padding: 3px 9px; border-radius: 6px; font-size: 12px; font-weight: 600; color: var(--nm-ink-soft); cursor: pointer; user-select: none; }
+    .nm-layers label.on { background: var(--nm-surface); color: var(--nm-accent); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+    .nm-layers input { margin: 0; accent-color: var(--nm-accent); }
     .nm-crumbs { font-size: 13px; color: var(--nm-faint); flex: 1 1 auto; }
     .nm-crumbs a { color: var(--nm-accent); cursor: pointer; }
     .nm-crumbs span { margin: 0 6px; }
@@ -61,6 +66,13 @@ const LEVELS: { level: Level; label: string; hint: string }[] = [
             <button type="button" [class.active]="level() === l.level" [disabled]="l.level === 4 && !canL4()" [title]="l.hint" (click)="setLevel(l.level)">{{ l.label }}</button>
           }
         </div>
+        @if (hasK8s() || hasCompute()) {
+          <div class="nm-layers" role="group" aria-label="Layers">
+            <label [class.on]="layers().network"><input type="checkbox" [checked]="layers().network" (change)="toggleLayer('network')" /> Network</label>
+            @if (hasK8s()) { <label [class.on]="layers().kubernetes"><input type="checkbox" [checked]="layers().kubernetes" (change)="toggleLayer('kubernetes')" /> Kubernetes</label> }
+            @if (hasCompute()) { <label [class.on]="layers().compute"><input type="checkbox" [checked]="layers().compute" (change)="toggleLayer('compute')" /> ECS &amp; Lambda</label> }
+          </div>
+        }
         <nav class="nm-crumbs">
           <a (click)="setFocus(undefined)">Whole blueprint</a>
           @for (c of crumbs(); track c.id) { <span>›</span><a (click)="setFocus(c.id)">{{ c.name }}</a> }
@@ -188,7 +200,11 @@ export class NetworkMapComponent {
 
   private readonly idx = computed(() => (this.graph() ? new GraphIndex(this.graph()!) : null));
   private readonly severity = computed(() => (this.idx() ? buildSeverity(this.idx()!) : null));
-  private readonly view = computed(() => (this.idx() ? computeView(this.idx()!, this.level(), this.focusId()) : null));
+  /** Which layers are drawn; remembered per browser (a convenience, so storage failures just fall back). */
+  protected readonly layers = signal<Layers>(loadLayers());
+  protected readonly hasK8s = computed(() => !!this.idx()?.graph.nodes.some(n => n.kind === 'k8s-cluster'));
+  protected readonly hasCompute = computed(() => !!this.idx()?.graph.nodes.some(n => n.kind === 'ecs-cluster' || n.kind === 'lambda-function'));
+  private readonly view = computed(() => (this.idx() ? computeView(this.idx()!, this.level(), this.focusId(), this.layers()) : null));
   protected readonly needsFocus = computed(() => !!this.view()?.needsFocus);
 
   protected readonly canL4 = computed(() => {
@@ -258,7 +274,8 @@ export class NetworkMapComponent {
         this.sceneCache.clear();
         this.cacheFor = ctx;
       }
-      const key = `${view.level}|${view.focusId ?? ''}`;
+      const l = this.layers();
+      const key = `${view.level}|${view.focusId ?? ''}|${+l.network}${+l.kubernetes}${+l.compute}`;
       const cached = this.sceneCache.get(key);
       this.busy.set(!cached);
       this.error.set('');
@@ -292,6 +309,7 @@ export class NetworkMapComponent {
   private applyReveal(r: { id: string }, idx: GraphIndex): void {
     const n = idx.node(r.id);
     if (!n) return;
+    this.ensureLayers([n.id], idx);
     const lv = kindInfo(n.kind).level;
     const network = n.kind === 'network' ? n : idx.ancestorOfKind(n.id, 'network');
     let level: Level = (lv >= 1 && lv <= 4 ? lv : 3) as Level;
@@ -318,6 +336,7 @@ export class NetworkMapComponent {
         if (this.scene().boxes.length) setTimeout(() => this.fit());
         return;
       }
+      this.ensureLayers(p.hops.map(h => h.nodeId), idx);
       const level = pathLevel(idx, p);
       this.pendingPathFit = true;
       if (level === this.level() && !this.focusId() && this.scene().boxes.length) setTimeout(() => this.fitPath());
@@ -362,6 +381,23 @@ export class NetworkMapComponent {
     // L1 is the overview: a focus left over from drilling in would hide every other network
     if (l === 1) this.focusId.set(undefined);
     this.level.set(l);
+  }
+
+  protected toggleLayer(k: LayerKey): void {
+    const next = { ...this.layers(), [k]: !this.layers()[k] };
+    this.layers.set(next);
+    saveLayers(next);
+  }
+
+  /** Switch on whatever layers these nodes live in, so revealing or tracing to them never lands on nothing. */
+  private ensureLayers(ids: string[], idx: GraphIndex): void {
+    const cur = this.layers();
+    const need = ids.map(id => idx.node(id)).map(n => (n ? layerOf(n.kind) : undefined)).filter((k): k is LayerKey => !!k && !cur[k]);
+    if (!need.length) return;
+    const next = { ...cur };
+    for (const k of need) next[k] = true;
+    this.layers.set(next);
+    saveLayers(next);
   }
 
   /** Whole blueprint at L1, nothing selected, fitted (the page's Clear button). */
@@ -537,4 +573,18 @@ export class NetworkMapComponent {
 
 function clampZoom(k: number): number {
   return Math.min(3, Math.max(0.15, k));
+}
+
+const LAYERS_KEY = 'netmap.layers';
+
+function loadLayers(): Layers {
+  try {
+    const v = JSON.parse(localStorage.getItem(LAYERS_KEY) ?? 'null');
+    if (v && typeof v === 'object') return { ...DEFAULT_LAYERS, ...v };
+  } catch { /* storage blocked or corrupt: use defaults */ }
+  return { ...DEFAULT_LAYERS };
+}
+
+function saveLayers(l: Layers): void {
+  try { localStorage.setItem(LAYERS_KEY, JSON.stringify(l)); } catch { /* not persisted; fine */ }
 }

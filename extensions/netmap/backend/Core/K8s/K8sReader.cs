@@ -58,6 +58,7 @@ public sealed class K8sReader
         o.Ingresses.AddRange(await OptionalAsync(Paths[3], K8sParse.Ingress, o.Warnings, "ingresses", ct));
         o.NetworkPolicies.AddRange(await OptionalAsync(Paths[4], K8sParse.NetworkPolicy, o.Warnings, "networkpolicies", ct));
         o.Nodes.AddRange(await OptionalAsync(Paths[5], K8sParse.Node, o.Warnings, "nodes", ct));
+        o.ExcludeSystemNamespaces();
         return o;
     }
 

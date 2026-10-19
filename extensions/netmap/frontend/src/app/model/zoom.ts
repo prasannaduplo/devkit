@@ -1,4 +1,5 @@
 import { GraphNode, Visibility } from './api-types';
+import { ALL_LAYERS, Layers, layerVisible } from './layers';
 import { GraphIndex, num, str, strs } from './graph-index';
 import { kindInfo } from './kinds';
 
@@ -38,7 +39,7 @@ export interface ViewModel {
 export const POD_AGGREGATE_THRESHOLD = 12;
 
 /** Which nodes/edges a zoom level (optionally scoped to one container) draws. See Task 4 rules. */
-export function computeView(idx: GraphIndex, level: Level, focusId?: string): ViewModel {
+export function computeView(idx: GraphIndex, level: Level, focusId?: string, layers: Layers = ALL_LAYERS): ViewModel {
   const focus = focusId ? idx.node(focusId) : undefined;
   if (level === 4 && !(focus && (focus.kind === 'network' || idx.ancestorOfKind(focus.id, 'network')))) {
     return { level, focusId, needsFocus: true, nodes: [], edges: [] };
@@ -51,7 +52,7 @@ export function computeView(idx: GraphIndex, level: Level, focusId?: string): Vi
   };
 
   const visible = new Set<string>();
-  for (const n of idx.graph.nodes) if (shownKind(n.kind) && inScope(n)) visible.add(n.id);
+  for (const n of idx.graph.nodes) if (shownKind(n.kind) && inScope(n) && layerVisible(n, layers)) visible.add(n.id);
 
   // Busy namespaces fold their pods into one box per owner (Deployment / StatefulSet / DaemonSet …) at L4, unless
   // the namespace itself (or one of its pods) is the focus — drilling into the namespace expands them.

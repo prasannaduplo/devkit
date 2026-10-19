@@ -1,5 +1,6 @@
 import { Component, DestroyRef, LOCALE_ID, OnInit, computed, effect, inject, signal, untracked, viewChild } from '@angular/core';
 import { nodeDetails } from '../model/details';
+import { withoutSystemNamespaces } from '../model/layers';
 import { relatedResources } from '../model/related';
 import { formatDate } from '@angular/common';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
@@ -272,7 +273,7 @@ const COLS: Record<string, NmColumn[]> = {
                   <nm-trace-bar [index]="idx()" [(source)]="traceSource" (picked)="onPicked($event)" (trace)="runTrace($event)" />
                   <button type="button" class="btn btn-sm btn-outline-secondary" title="Clear search, trace, selection and focus — back to L1" (click)="clearAll()">Clear</button>
                 </div>
-                <nm-network-map [graph]="graph()" [reveal]="reveal()" [path]="activePath()" (selected)="selection.set($event)" (clearPath)="clearTrace()" />
+                <nm-network-map [graph]="viewGraph()" [reveal]="reveal()" [path]="activePath()" (selected)="selection.set($event)" (clearPath)="clearTrace()" />
               }
               @case ('inventory') { <nm-inventory-tab [rows]="inventory()" [fileName]="it.name + '-inventory'" (rowClick)="selectNode({ id: $event })" /> }
               @case ('egress') { <nm-table [columns]="cols['egress']" [rows]="egress()" [clickable]="true" empty="No member subnets collected." (rowClick)="selectNode($event)" /> }
@@ -491,7 +492,9 @@ export class BlueprintDetailComponent implements OnInit {
   private readonly openedAt = Date.now();
 
   protected readonly latest = computed(() => this.item()?.result?.latestSummary ?? null);
-  protected readonly idx = computed(() => (this.graph() ? new GraphIndex(this.graph()!) : null));
+  /** The snapshot as shown: Kubernetes system namespaces removed (older snapshots still contain them). */
+  protected readonly viewGraph = computed(() => (this.graph() ? withoutSystemNamespaces(this.graph()!) : null));
+  protected readonly idx = computed(() => (this.viewGraph() ? new GraphIndex(this.viewGraph()!) : null));
 
   // --- path tracing -------------------------------------------------------------------------------------------
   protected readonly traceSource = signal<string | null>(null);

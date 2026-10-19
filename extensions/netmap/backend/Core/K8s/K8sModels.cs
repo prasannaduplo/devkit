@@ -45,6 +45,18 @@ public sealed class K8sObjects
     public bool PodsTruncated { get; set; }
     /// <summary>Optional lists that could not be read (ingresses, networkpolicies, nodes) with the reason.</summary>
     public List<string> Warnings { get; init; } = new();
+
+    /// <summary>Drops Kubernetes and EKS add-on namespaces (kube-system, kube-public, kube-node-lease, amazon-*,
+    /// aws-*) and everything in them: platform plumbing, not the customer's workloads. The UI mirrors this list
+    /// (frontend model/layers.ts) to hide them in snapshots taken before this filter existed.</summary>
+    public void ExcludeSystemNamespaces()
+    {
+        Namespaces.RemoveAll(n => K8sSystemNamespaces.Is(n.Name));
+        Pods.RemoveAll(p => K8sSystemNamespaces.Is(p.Namespace));
+        Services.RemoveAll(s => K8sSystemNamespaces.Is(s.Namespace));
+        Ingresses.RemoveAll(i => K8sSystemNamespaces.Is(i.Namespace));
+        NetworkPolicies.RemoveAll(p => K8sSystemNamespaces.Is(p.Namespace));
+    }
 }
 
 /// <summary>Kubernetes list JSON → the safe records above.</summary>
@@ -276,4 +288,12 @@ public static class LabelSelector
     /// <summary>A service's spec.selector (plain map): empty selects nothing (endpoints are managed by hand).</summary>
     public static bool MatchesMap(IReadOnlyDictionary<string, string> selector, IReadOnlyDictionary<string, string> labels) =>
         selector.Count > 0 && selector.All(kv => labels.TryGetValue(kv.Key, out var v) && v == kv.Value);
+}
+
+public static class K8sSystemNamespaces
+{
+    public static bool Is(string? name) =>
+        name is "kube-system" or "kube-public" or "kube-node-lease"
+        || (name?.StartsWith("amazon-", StringComparison.Ordinal) ?? false)
+        || (name?.StartsWith("aws-", StringComparison.Ordinal) ?? false);
 }

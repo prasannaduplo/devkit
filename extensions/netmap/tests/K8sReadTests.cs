@@ -181,4 +181,29 @@ public class K8sReadTests
         EksCollector.RoleOf("arn:aws:sts::111111111111:assumed-role/duplo-scan/session-1").Should().Be("role duplo-scan");
         EksCollector.RoleOf("arn:aws:iam::111111111111:user/alice").Should().Be("arn:aws:iam::111111111111:user/alice");
     }
+
+    [Theory]
+    [InlineData("kube-system", true)]
+    [InlineData("kube-public", true)]
+    [InlineData("kube-node-lease", true)]
+    [InlineData("amazon-cloudwatch", true)]
+    [InlineData("aws-observability", true)]
+    [InlineData("default", false)]
+    [InlineData("ingress-nginx", false)]
+    [InlineData("kubernetes-dashboard", false)]
+    public void System_namespaces_are_recognised(string ns, bool system) =>
+        K8sSystemNamespaces.Is(ns).Should().Be(system);
+
+    [Fact]
+    public void System_namespaces_and_their_objects_are_excluded()
+    {
+        var o = new K8sObjects();
+        o.Namespaces.Add(new K8sNamespace("kube-system", new()));
+        o.Namespaces.Add(new K8sNamespace("shop", new()));
+        o.Pods.Add(new K8sPod("kube-system", "coredns-1", new(), "10.0.0.5", new(), "Running", null, false, "ReplicaSet", "coredns", new()));
+        o.Pods.Add(new K8sPod("shop", "web-1", new(), "10.0.0.6", new(), "Running", null, false, "ReplicaSet", "web", new()));
+        o.ExcludeSystemNamespaces();
+        o.Namespaces.Select(n => n.Name).Should().Equal("shop");
+        o.Pods.Select(p => p.Name).Should().Equal("web-1");
+    }
 }

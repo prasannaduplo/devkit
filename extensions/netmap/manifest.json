@@ -2,10 +2,10 @@
   "manifestVersion": "1.0",
   "id": "duplo.examples.netmap",
   "name": "Network Map",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "sdkVersion": "REPLACED_BY_SKILL_FROM_sdk-version_ENDPOINT",
   "backend": {
-    "assemblyDir": "duplo.examples.netmap/0.8.0/backend",
+    "assemblyDir": "duplo.examples.netmap/0.8.1/backend",
     "entryAssembly": "Duplo.Extension.NetMap.dll"
   },
   "resources": [
