@@ -39,6 +39,16 @@
     <PackageReference Include="AWSSDK.ElasticLoadBalancing" Version="4.*" />
     <PackageReference Include="AWSSDK.NetworkFirewall" Version="4.*" />
     <PackageReference Include="AWSSDK.Route53Resolver" Version="4.*" />
+    <!-- v2b spike (Kubernetes access probe): eks:ListClusters / eks:DescribeCluster and sts:GetCallerIdentity, all
+         read-only, same floating-4.x reasoning as above. AWSSDK.SecurityToken already arrives transitively (compile-only)
+         through the Duplo SDK at 4.0.101; it is referenced explicitly, like AWSSDK.EC2, because Core/K8s uses it directly
+         and the SDK-free tests project needs the same reference. -->
+    <PackageReference Include="AWSSDK.EKS" Version="4.*" />
+    <PackageReference Include="AWSSDK.SecurityToken" Version="4.*" />
+    <!-- v2b workload identity: ecs:List*/Describe* (clusters, services, tasks) and lambda:ListFunctions, all read-only,
+         same floating-4.x reasoning as AWSSDK.EC2 above. -->
+    <PackageReference Include="AWSSDK.ECS" Version="4.*" />
+    <PackageReference Include="AWSSDK.Lambda" Version="4.*" />
   </ItemGroup>
 
 </Project>

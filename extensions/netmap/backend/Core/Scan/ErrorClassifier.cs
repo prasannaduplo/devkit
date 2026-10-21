@@ -24,6 +24,7 @@ public static class ErrorClassifier
 
     public static (ErrorKind Kind, string? MissingPermission) Classify(Exception ex)
     {
+        if (ex is CollectorDeniedException d) return (ErrorKind.Denied, d.MissingPermission);
         if (ex is AmazonServiceException aws)
         {
             var code = aws.ErrorCode ?? "";
@@ -38,4 +39,12 @@ public static class ErrorClassifier
         if (ex is OperationCanceledException or TimeoutException or HttpRequestException) return (ErrorKind.Transient, null);
         return (ErrorKind.Error, null);
     }
+}
+
+/// <summary>A collector could read nothing because access is missing outside IAM (e.g. no EKS access entry): the unit
+/// ends as denied with this text as its missing permission, like an AWS AccessDenied.</summary>
+public sealed class CollectorDeniedException : Exception
+{
+    public CollectorDeniedException(string missingPermission) : base("access denied: " + missingPermission) => MissingPermission = missingPermission;
+    public string MissingPermission { get; }
 }

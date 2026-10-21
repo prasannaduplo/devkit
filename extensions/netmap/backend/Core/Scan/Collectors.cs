@@ -11,6 +11,7 @@ public static class CapabilityKeys
     public const string FlowLogs = "flowLogs";
     public const string DnsQueryLogs = "dnsQueryLogs";
     public const string Inventory = "inventory";
+    public const string Workloads = "workloads";
 }
 
 /// <param name="Order">Execution order inside a (scope, region) group; later collectors read earlier parts.</param>
@@ -30,9 +31,13 @@ public static class Collectors
     public static readonly CollectorDescriptor DnsResolver = new("aws.dns-resolver", 80, false, new[] { CapabilityKeys.Dns, CapabilityKeys.DnsQueryLogs });
     public static readonly CollectorDescriptor FlowLogs = new("aws.flow-logs", 90, false, new[] { CapabilityKeys.FlowLogs });
     public static readonly CollectorDescriptor DnsZones = new("aws.dns-zones", 100, true, new[] { CapabilityKeys.Dns });
+    // v2b workload identity: after interfaces and load balancers, whose parts they link pods / tasks / functions to.
+    public static readonly CollectorDescriptor Eks = new("aws.eks", 110, false, new[] { CapabilityKeys.Workloads });
+    public static readonly CollectorDescriptor Ecs = new("aws.ecs", 120, false, new[] { CapabilityKeys.Workloads });
+    public static readonly CollectorDescriptor Lambda = new("aws.lambda", 130, false, new[] { CapabilityKeys.Workloads });
 
     public static readonly IReadOnlyList<CollectorDescriptor> All = new[]
     {
-        CoreNetwork, Interfaces, LoadBalancers, Endpoints, Transit, Vpn, Peering, DnsResolver, FlowLogs, DnsZones,
+        CoreNetwork, Interfaces, LoadBalancers, Endpoints, Transit, Vpn, Peering, DnsResolver, FlowLogs, DnsZones, Eks, Ecs, Lambda,
     };
 }

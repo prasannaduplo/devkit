@@ -1,5 +1,8 @@
 using Amazon.EC2;
 using Amazon.EC2.Model;
+using Amazon.EKS;
+using Amazon.Runtime;
+using Amazon.SecurityToken;
 using Duplo.Ai.DataManagement.Interfaces;
 using Duplo.Ai.DataManagement.Services;
 using Duplo.Ai.DataManagement.Utils;
@@ -9,6 +12,7 @@ using Duplo.Ai.Model.Resource;
 using Duplo.Ai.Studio.Extensibility.Infra;
 using Duplo.Extension.NetMap.Core.Aws;
 using Duplo.Extension.NetMap.Core.Graph;
+using Duplo.Extension.NetMap.Core.K8s;
 using Duplo.Extension.NetMap.Core.Scan;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -209,6 +213,25 @@ public class NetworkBlueprintService : ResourceServiceBase<NetworkBlueprint, Net
         }).OrderBy(v => v.Name, StringComparer.OrdinalIgnoreCase).ToList();
     }
 
+    /// <summary>v2b spike: can this scope's AWS identity read Kubernetes in the region's EKS clusters? Read-only:
+    /// eks:ListClusters / eks:DescribeCluster, sts:GetCallerIdentity, then GET /version and SelfSubjectAccessReviews
+    /// with an EKS bearer token built from the same credentials. The token never leaves this method.</summary>
+    public async Task<List<K8sProbeResult>> ProbeK8sAsync(string scopeId, string region, CancellationToken ct)
+    {
+        await AuthorizeScopesAsync(new[] { scopeId }, ct);
+        if (string.IsNullOrWhiteSpace(region) || Amazon.RegionEndpoint.GetBySystemName(region).DisplayName == "Unknown")
+            throw new ArgumentException($"Unknown region '{region}'.");
+        AWSCredentials? creds = null;
+        using var eks = await _clients.CreateAwsClientAsync(new[] { scopeId }, region, (c, r) => { creds = c; return new AmazonEKSClient(c, r); }, ct: ct);
+        using var sts = await _clients.CreateAwsClientAsync(new[] { scopeId }, region, (c, r) => new AmazonSecurityTokenServiceClient(c, r), ct: ct);
+        if (creds == null) throw new InvalidOperationException($"No AWS credentials resolved for scope '{scopeId}'.");
+        var results = await new EksProbe().ProbeAsync(eks, sts, creds, region, ct);
+        _logger.LogInformation("K8s probe scope {ScopeId} region {Region}: {Clusters} cluster(s), {Reachable} reachable, {Readable} readable",
+            scopeId, region, results.Count, results.Count(r => r.ApiReachable),
+            results.Count(r => r.CanListPods == true && r.CanListServices == true && r.CanListNetworkPolicies == true));
+        return results;
+    }
+
     public async Task<List<SnapshotHeader>> ListSnapshotsAsync(NetworkBlueprint bp, CancellationToken ct)
     {
         using var scope = _scopes.CreateScope();
@@ -218,9 +241,9 @@ public class NetworkBlueprintService : ResourceServiceBase<NetworkBlueprint, Net
         return snaps.OrderByDescending(s => s.Spec.Sequence).Select(s => ToHeader(s, activeId)).ToList();
     }
 
-    /// <summary>Decompressed graph JSON for a snapshot of this blueprint ("latest" = the blueprint's latest),
-    /// following SameAsSnapshotId for unchanged scans. Null when not found.</summary>
-    public async Task<string?> GetGraphJsonAsync(NetworkBlueprint bp, string snapshotId, CancellationToken ct)
+    /// <summary>Decoded graph for a snapshot of this blueprint ("latest" = the blueprint's latest), following
+    /// SameAsSnapshotId for unchanged scans. A fresh copy per call (callers may mutate it). Null when not found.</summary>
+    public async Task<NetworkGraph?> GetGraphAsync(NetworkBlueprint bp, string snapshotId, CancellationToken ct)
     {
         var id = snapshotId == "latest" ? bp.Result?.LatestSnapshotId : snapshotId;
         if (id == null) return null;
@@ -229,7 +252,7 @@ public class NetworkBlueprintService : ResourceServiceBase<NetworkBlueprint, Net
         var snap = await repo.GetByIdAsync(id, ct);
         if (snap?.Spec?.BlueprintId != bp.Id) return null;
         if (snap.Result?.Graph == null && snap.Result?.SameAsSnapshotId is { } same) snap = await repo.GetByIdAsync(same, ct);
-        return snap?.Result?.Graph is { } bytes ? GraphCodec.ToJson(GraphCodec.Decode<NetworkGraph>(bytes)) : null;
+        return snap?.Result?.Graph is { } bytes ? GraphCodec.Decode<NetworkGraph>(bytes) : null;
     }
 
     // A Running snapshot that is not the blueprint's active scan was orphaned (crash / failed save): report it as abandoned.

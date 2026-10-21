@@ -3,7 +3,7 @@ using Duplo.Extension.NetMap.Core.Graph;
 
 namespace Duplo.Extension.NetMap.Core.Scan;
 
-/// <summary>The 8 capability tiles: available / partial / not-readable / none, each with a one-line reason and
+/// <summary>The 9 capability tiles: available / partial / not-readable / none, each with a one-line reason and
 /// counts. A denied collector makes its capabilities not-readable (naming the missing permission); a failed one
 /// makes them partial.</summary>
 public static class CapabilityEvaluator
@@ -20,6 +20,7 @@ public static class CapabilityEvaluator
             [CapabilityKeys.Dns] = Dns(g),
             [CapabilityKeys.FlowLogs] = Coverage(g, members, NodeKinds.FlowLogConfig, "flow logs", subnetLevelCounts: true),
             [CapabilityKeys.DnsQueryLogs] = Coverage(g, members, NodeKinds.DnsQueryLogConfig, "DNS query logs", subnetLevelCounts: false),
+            [CapabilityKeys.Workloads] = Workloads(g, units),
         };
 
         var affected = new Dictionary<string, List<WorkUnit>>();
@@ -27,7 +28,8 @@ public static class CapabilityEvaluator
         {
             var d = Collectors.All.FirstOrDefault(c => c.Id == u.Collector);
             if (d == null) continue;
-            foreach (var key in d.Capabilities.Where(caps.ContainsKey))
+            // workloads weighs its own unit problems against what was read (some clusters readable → partial)
+            foreach (var key in d.Capabilities.Where(k => caps.ContainsKey(k) && k != CapabilityKeys.Workloads))
             {
                 if (!affected.TryGetValue(key, out var list)) affected[key] = list = new List<WorkUnit>();
                 list.Add(u);
@@ -64,6 +66,42 @@ public static class CapabilityEvaluator
 
     private static CapabilityState St(string state, string reason, Dictionary<string, int>? counts = null) =>
         new() { State = state, Reason = reason, Counts = counts ?? new() };
+
+    private static readonly HashSet<string> WorkloadCollectors = new(StringComparer.Ordinal) { Collectors.Eks.Id, Collectors.Ecs.Id, Collectors.Lambda.Id };
+
+    /// <summary>EKS / ECS / Lambda: counts of what was read, and which clusters or units could not be read and why.</summary>
+    public static CapabilityState Workloads(GraphIndex g, IReadOnlyList<WorkUnit> units)
+    {
+        var clusters = g.OfKind(NodeKinds.K8sCluster).ToList();
+        var readable = clusters.Where(c => c.AttrBool("readable") == true).ToList();
+        var counts = new Dictionary<string, int>
+        {
+            ["clusters"] = clusters.Count, ["clustersReadable"] = readable.Count,
+            ["pods"] = g.OfKind(NodeKinds.Pod).Count(), ["services"] = g.OfKind(NodeKinds.K8sService).Count(),
+            ["ingresses"] = g.OfKind(NodeKinds.Ingress).Count(), ["networkPolicies"] = g.OfKind(NodeKinds.NetworkPolicy).Count(),
+            ["ecsServices"] = g.OfKind(NodeKinds.EcsService).Count(), ["tasks"] = g.OfKind(NodeKinds.EcsTask).Count(),
+            ["functions"] = g.OfKind(NodeKinds.LambdaFunction).Count(),
+        };
+        var problems = clusters.Where(c => c.AttrBool("readable") != true)
+            .Select(c => $"{c.Name}: needs {c.AttrString("unreadableReason") ?? "read access"}").ToList();
+        foreach (var u in units.Where(u => WorkloadCollectors.Contains(u.Collector) && u.Status is UnitStatuses.Denied or UnitStatuses.Failed))
+            problems.Add(u.Status == UnitStatuses.Denied
+                ? $"{u.Collector} in {u.ScopeId} ({u.Region}): missing {u.MissingPermission ?? "a read permission"}"
+                : $"{u.Collector} in {u.ScopeId} ({u.Region}) failed: {u.Error ?? "unknown error"}");
+        var deniedUnits = units.Count(u => WorkloadCollectors.Contains(u.Collector) && u.Status == UnitStatuses.Denied);
+
+        var found = counts["pods"] + counts["services"] + counts["tasks"] + counts["functions"] + counts["ecsServices"];
+        var parts = new List<string>();
+        if (clusters.Count > 0) parts.Add($"{readable.Count} of {clusters.Count} cluster(s) readable");
+        if (found > 0) parts.Add($"{counts["pods"]} pods · {counts["services"]} services · {counts["tasks"]} tasks · {counts["functions"]} functions");
+        var summary = string.Join(" · ", parts);
+        var why = problems.Count > 0 ? " — " + string.Join("; ", problems.Distinct()) : "";
+
+        if (clusters.Count == 0 && found == 0 && problems.Count == 0) return St(CapabilityStates.None, "no EKS, ECS or Lambda workloads in these networks", counts);
+        if (found == 0 && readable.Count == 0 && problems.Count > 0 && (deniedUnits > 0 || clusters.Count > 0))
+            return St(CapabilityStates.NotReadable, (summary.Length > 0 ? summary : "not readable") + why, counts);
+        return problems.Count > 0 ? St(CapabilityStates.Partial, summary + why, counts) : St(CapabilityStates.Available, summary, counts);
+    }
 
     private static CapabilityState Egress(GraphIndex g)
     {

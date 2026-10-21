@@ -34,6 +34,17 @@ public static class NodeKinds
     public const string CidrBlock = "cidr-block";
     public const string FlowLogConfig = "flow-log-config";
     public const string DnsQueryLogConfig = "dns-query-log-config";
+    // v2b workload identity
+    public const string K8sCluster = "k8s-cluster";
+    public const string K8sNamespace = "k8s-namespace";
+    public const string Pod = "pod";
+    public const string K8sService = "k8s-service";
+    public const string Ingress = "ingress";
+    public const string NetworkPolicy = "network-policy";
+    public const string EcsCluster = "ecs-cluster";
+    public const string EcsService = "ecs-service";
+    public const string EcsTask = "ecs-task";
+    public const string LambdaFunction = "lambda-function";
 }
 
 public static class EdgeKinds
@@ -52,6 +63,17 @@ public static class EdgeKinds
     public const string ResolvesTo = "resolves-to";
     public const string ForwardsTo = "forwards-to";
     public const string PlacedIn = "placed-in";
+    // v2b workload identity
+    /// <summary>Workload → the interface (or EC2 node) it sends from: pod → ENI holding its IP, task → its ENI, Lambda → its ENIs.</summary>
+    public const string RunsOn = "runs-on";
+    /// <summary>k8s-service / network-policy → the pods its selector matches.</summary>
+    public const string Selects = "selects";
+    /// <summary>Front → what serves it: ingress → k8s-service, k8s-service / ingress → load balancer (by status hostname).</summary>
+    public const string Backs = "backs";
+    /// <summary>Load balancer → pod (ip-mode target whose IP is the pod IP); ecs-service → load balancer.</summary>
+    public const string Exposes = "exposes";
+    /// <summary>ecs-service → the tasks it runs.</summary>
+    public const string Runs = "runs";
 }
 
 /// <param name="Level">Zoom level where the kind first appears: 1 very high … 4 low; 0 = not drawn.</param>
@@ -97,6 +119,16 @@ public static class KindRegistry
         new(NodeKinds.CidrBlock, 4, "cidr", "CIDR block"),
         new(NodeKinds.FlowLogConfig, 0, "flow-logs", "Flow log"),
         new(NodeKinds.DnsQueryLogConfig, 0, "dns-logs", "DNS query log"),
+        new(NodeKinds.K8sCluster, 2, "k8s-cluster", "Kubernetes cluster", Container: true),
+        new(NodeKinds.K8sNamespace, 3, "k8s-namespace", "Namespace", Container: true),
+        new(NodeKinds.K8sService, 3, "k8s-service", "Kubernetes service"),
+        new(NodeKinds.Ingress, 3, "ingress", "Ingress"),
+        new(NodeKinds.Pod, 4, "pod", "Pod"),
+        new(NodeKinds.NetworkPolicy, 4, "network-policy", "Network policy"),
+        new(NodeKinds.EcsCluster, 2, "ecs-cluster", "ECS cluster", Container: true),
+        new(NodeKinds.EcsService, 3, "ecs-service", "ECS service"),
+        new(NodeKinds.EcsTask, 4, "ecs-task", "ECS task"),
+        new(NodeKinds.LambdaFunction, 3, "lambda", "Lambda function"),
     }.ToDictionary(k => k.Kind, StringComparer.Ordinal);
 
     public static KindInfo Get(string kind) => Map.TryGetValue(kind, out var k) ? k : new KindInfo(kind, 3, "generic", kind, Container: false);

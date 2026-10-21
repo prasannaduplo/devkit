@@ -40,6 +40,8 @@ public static class LoadBalancerNormalizer
                 .SetState(lb.State?.Code?.Value).Attr("lbType", lb.Type?.Value).Attr("scheme", lb.Scheme?.Value).Attr("dnsName", lb.DNSName)
                 .Attr("listeners", Listeners(d.Listeners.Where(l => l.LoadBalancerArn == lb.LoadBalancerArn).Select(l => (l.Port, l.Protocol?.Value))));
             n.Raw = RawJson.From(lb);
+            // workload collectors (ECS services) match their target groups to this load balancer
+            n.Attr("targetGroupArns", NodeExtensions.Arr(d.TargetGroups.Where(t => Aws.L(t.LoadBalancerArns).Contains(lb.LoadBalancerArn)).Select(t => t.TargetGroupArn)));
 
             foreach (var az in Aws.L(lb.AvailabilityZones).Where(a => a.SubnetId != null))
                 b.Edge(n.Id, EdgeKinds.PlacedIn, ctx.Id(NodeKinds.Subnet, az.SubnetId)).Attr("az", az.ZoneName);
@@ -55,14 +57,17 @@ public static class LoadBalancerNormalizer
                 foreach (var th in d.TargetHealth.GetValueOrDefault(tg.TargetGroupArn) ?? new())
                 {
                     if (th.Target?.Id is not { } tid) continue;
-                    var to = tid.StartsWith("i-", StringComparison.Ordinal) || tid.StartsWith("arn:", StringComparison.Ordinal)
+                    var isIp = !(tid.StartsWith("i-", StringComparison.Ordinal) || tid.StartsWith("arn:", StringComparison.Ordinal));
+                    var to = !isIp
                         ? ctx.Id(NodeKinds.Workload, tid)
                         : lb.VpcId != null && eniByVpcIp.TryGetValue((lb.VpcId, tid), out var vpcEniId) ? vpcEniId
                         : eniByIp.TryGetValue(tid, out var eniId) ? eniId
                         : InterfacesNormalizer.EnsureCidr(b, tid + (tid.Contains(':') ? "/128" : "/32"));
-                    b.Edge(n.Id, EdgeKinds.Targets, to, $"{tg.TargetGroupArn}|{th.Target.Port}")
+                    b.Edge(n.Id, EdgeKinds.Targets, to, $"{tg.TargetGroupArn}|{tid}|{th.Target.Port}")
                         .Attr("targetGroup", tg.TargetGroupName).Attr("port", th.Target.Port ?? tg.Port)
-                        .Attr("protocol", tg.Protocol?.Value).Attr("health", th.TargetHealth?.State?.Value);
+                        .Attr("protocol", tg.Protocol?.Value).Attr("health", th.TargetHealth?.State?.Value)
+                        // ip-mode target: workload collectors resolve it to the pod / task holding this address
+                        .Attr("targetIp", isIp ? tid : null);
                 }
         }
 

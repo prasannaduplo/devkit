@@ -75,7 +75,8 @@ public class IdsTests
     [Fact]
     public void Container_kinds_are_flagged_and_the_kinds_fixture_is_written()
     {
-        var containers = new[] { NodeKinds.Account, NodeKinds.Network, NodeKinds.Subnet, NodeKinds.Hub, NodeKinds.VpnConnection };
+        var containers = new[] { NodeKinds.Account, NodeKinds.Network, NodeKinds.Subnet, NodeKinds.Hub, NodeKinds.VpnConnection,
+            NodeKinds.K8sCluster, NodeKinds.K8sNamespace, NodeKinds.EcsCluster };
         KindRegistry.All.Where(k => k.Container).Select(k => k.Kind).Should().BeEquivalentTo(containers);
         KindRegistry.Get("quantum-router").Container.Should().BeFalse();
 

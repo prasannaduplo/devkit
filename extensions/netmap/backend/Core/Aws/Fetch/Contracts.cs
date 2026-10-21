@@ -1,4 +1,8 @@
 using Amazon.EC2;
+using Amazon.ECS;
+using Amazon.EKS;
+using Amazon.Lambda;
+using Amazon.SecurityToken;
 using Amazon.EC2.Model;
 using Amazon.ElasticLoadBalancing;
 using Amazon.ElasticLoadBalancingV2;
@@ -21,6 +25,12 @@ public interface IAwsClients : IDisposable
     Task<IAmazonNetworkFirewall> NetworkFirewall(CancellationToken ct);
     Task<IAmazonRoute53> Route53(CancellationToken ct);
     Task<IAmazonRoute53Resolver> Resolver(CancellationToken ct);
+    Task<IAmazonEKS> Eks(CancellationToken ct);
+    Task<IAmazonECS> Ecs(CancellationToken ct);
+    Task<IAmazonLambda> Lambda(CancellationToken ct);
+    Task<IAmazonSecurityTokenService> Sts(CancellationToken ct);
+    /// <summary>The scope's resolved AWS keys, only to sign the EKS bearer token. Never log or store them.</summary>
+    Task<ImmutableCredentials> Credentials(CancellationToken ct);
 }
 
 public interface ICollector

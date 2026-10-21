@@ -25,6 +25,17 @@ public class SanitizerTests
         json.Should().Contain("OutsideIpAddress").And.Contain("\"keep\":\"k\"");
     }
 
+    [Fact]
+    public void Removes_workload_environment_and_secrets()
+    {
+        var o = JsonNode.Parse("""
+            {"FunctionName":"f","Environment":{"Variables":{"DB_PASSWORD":"x"}},
+             "Containers":[{"Name":"c","Env":[{"name":"K","value":"v"}],"Secrets":[{"ValueFrom":"arn"}]}],"Token":"t"}
+            """)!.AsObject();
+        Sanitizer.Sanitize(o);
+        o.ToJsonString().Should().Be("""{"FunctionName":"f","Containers":[{"Name":"c"}]}""");
+    }
+
     [Theory]
     [InlineData("pre_shared_key")]
     [InlineData("pre-shared-key")]

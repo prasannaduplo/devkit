@@ -3,6 +3,8 @@ using Amazon.Runtime;
 using Duplo.Ai.DataManagement.Controllers.User.Resource;
 using Duplo.Ai.DataManagement.Models;
 using Duplo.Ai.Model.Interfaces;
+using Duplo.Extension.NetMap.Core.Graph;
+using Duplo.Extension.NetMap.Core.K8s;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 
@@ -31,6 +33,12 @@ public class NetworkBlueprintController : ResourcesController<NetworkBlueprint, 
     public Task<IActionResult> PickerVpcs(string workspaceId, [FromQuery] string scopeId, [FromQuery] string region, CancellationToken ct) =>
         Guard(async () => Ok(ApiResponse<List<PickerVpc>>.SuccessResult(await _blueprints.ListVpcsAsync(scopeId, region, ct))));
 
+    /// <summary>v2b spike diagnostic: per EKS cluster in the region, whether the scope's AWS identity reaches and can
+    /// read the Kubernetes API. Read-only; never returns the bearer token.</summary>
+    [HttpGet("picker/k8s")]
+    public Task<IActionResult> PickerK8s(string workspaceId, [FromQuery] string scopeId, [FromQuery] string region, CancellationToken ct) =>
+        Guard(async () => Ok(ApiResponse<List<K8sProbeResult>>.SuccessResult(await _blueprints.ProbeK8sAsync(scopeId, region, ct))));
+
     [HttpGet("{id}/snapshots")]
     public Task<IActionResult> Snapshots(string workspaceId, string id, CancellationToken ct) => Guard(async () =>
     {
@@ -38,16 +46,40 @@ public class NetworkBlueprintController : ResourcesController<NetworkBlueprint, 
         return bp is null ? NotFoundResult(id) : Ok(ApiResponse<List<SnapshotHeader>>.SuccessResult(await _blueprints.ListSnapshotsAsync(bp, ct)));
     });
 
+    /// <summary>The snapshot graph. <c>raw=</c> none | routing (raw kept only for network ACLs and security groups,
+    /// which the path engine reads) | all (default). <c>encoding=</c> json (default) | gzip64, which returns
+    /// <c>{ encoding: "gzip-base64", data }</c> because the platform proxy does not compress responses.</summary>
     [HttpGet("{id}/snapshots/{snapshotId}/graph")]
-    public Task<IActionResult> Graph(string workspaceId, string id, string snapshotId, CancellationToken ct) => Guard(async () =>
+    public Task<IActionResult> Graph(string workspaceId, string id, string snapshotId,
+        [FromQuery] string? raw, [FromQuery] string? encoding, CancellationToken ct) => Guard(async () =>
     {
+        var rawMode = GraphTransfer.ParseRawMode(raw);
+        var enc = GraphTransfer.ParseEncoding(encoding);
         var bp = await LoadAsync(id, ct);
         if (bp is null) return NotFoundResult(id);
-        var json = await _blueprints.GetGraphJsonAsync(bp, snapshotId, ct);
-        return json is null
-            ? NotFound(ApiResponse<object>.ErrorResult("Not found", $"No graph for snapshot '{snapshotId}'."))
-            : Ok(ApiResponse<JsonNode>.SuccessResult(JsonNode.Parse(json)!));
+        var graph = await _blueprints.GetGraphAsync(bp, snapshotId, ct);
+        return graph is null
+            ? NoGraph(snapshotId)
+            : Ok(ApiResponse<JsonNode>.SuccessResult(GraphTransfer.Body(graph, rawMode, enc)));
     });
+
+    /// <summary>One node's sanitized raw JSON as <c>{ nodeId, raw }</c>; the side panel loads it on demand.</summary>
+    [HttpGet("{id}/snapshots/{snapshotId}/nodes/raw")]
+    public Task<IActionResult> NodeRaw(string workspaceId, string id, string snapshotId, [FromQuery] string? nodeId, CancellationToken ct) => Guard(async () =>
+    {
+        if (string.IsNullOrEmpty(nodeId)) throw new ArgumentException("nodeId is required.");
+        var bp = await LoadAsync(id, ct);
+        if (bp is null) return NotFoundResult(id);
+        var graph = await _blueprints.GetGraphAsync(bp, snapshotId, ct);
+        if (graph is null) return NoGraph(snapshotId);
+        var body = GraphTransfer.NodeRaw(graph, nodeId);
+        return body is null
+            ? NotFound(ApiResponse<object>.ErrorResult("Not found", $"No node '{nodeId}' in snapshot '{snapshotId}'."))
+            : Ok(ApiResponse<JsonNode>.SuccessResult(body));
+    });
+
+    private IActionResult NoGraph(string snapshotId) =>
+        NotFound(ApiResponse<object>.ErrorResult("Not found", $"No graph for snapshot '{snapshotId}'."));
 
     private async Task<NetworkBlueprint?> LoadAsync(string id, CancellationToken ct)
     {

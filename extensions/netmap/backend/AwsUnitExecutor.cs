@@ -1,4 +1,9 @@
 using Amazon.EC2;
+using Amazon.ECS;
+using Amazon.EKS;
+using Amazon.Lambda;
+using Amazon.Runtime;
+using Amazon.SecurityToken;
 using Amazon.ElasticLoadBalancing;
 using Amazon.ElasticLoadBalancingV2;
 using Amazon.NetworkFirewall;
@@ -53,6 +58,11 @@ internal sealed class ScopedAwsClients : IAwsClients
     private IAmazonNetworkFirewall? _nfw;
     private IAmazonRoute53? _r53;
     private IAmazonRoute53Resolver? _resolver;
+    private IAmazonEKS? _eks;
+    private IAmazonECS? _ecs;
+    private IAmazonLambda? _lambda;
+    private IAmazonSecurityTokenService? _sts;
+    private AWSCredentials? _credentials;
 
     public ScopedAwsClients(IScopeClientFactory factory, string scopeId, string region)
     {
@@ -73,6 +83,23 @@ internal sealed class ScopedAwsClients : IAwsClients
         _r53 ??= Track(await _factory.CreateAwsClientAsync(_scope, "us-east-1", (c, r) => new AmazonRoute53Client(c, r), ct: ct));
     public async Task<IAmazonRoute53Resolver> Resolver(CancellationToken ct) =>
         _resolver ??= Track(await _factory.CreateAwsClientAsync(_scope, _region, (c, r) => new AmazonRoute53ResolverClient(c, r), ct: ct));
+
+    public async Task<IAmazonEKS> Eks(CancellationToken ct) =>
+        _eks ??= Track(await _factory.CreateAwsClientAsync(_scope, _region, (c, r) => { _credentials ??= c; return new AmazonEKSClient(c, r); }, ct: ct));
+    public async Task<IAmazonECS> Ecs(CancellationToken ct) =>
+        _ecs ??= Track(await _factory.CreateAwsClientAsync(_scope, _region, (c, r) => new AmazonECSClient(c, r), ct: ct));
+    public async Task<IAmazonLambda> Lambda(CancellationToken ct) =>
+        _lambda ??= Track(await _factory.CreateAwsClientAsync(_scope, _region, (c, r) => new AmazonLambdaClient(c, r), ct: ct));
+    public async Task<IAmazonSecurityTokenService> Sts(CancellationToken ct) =>
+        _sts ??= Track(await _factory.CreateAwsClientAsync(_scope, _region, (c, r) => { _credentials ??= c; return new AmazonSecurityTokenServiceClient(c, r); }, ct: ct));
+
+    /// <summary>The scope's credentials as handed to the client constructor (the factory exposes them no other way);
+    /// used only to sign the EKS bearer token.</summary>
+    public async Task<ImmutableCredentials> Credentials(CancellationToken ct)
+    {
+        if (_credentials == null) await Eks(ct);
+        return await _credentials!.GetCredentialsAsync();
+    }
 
     private T Track<T>(T client) where T : IDisposable
     {
